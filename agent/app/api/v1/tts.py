@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from models.tts import TTSRequest, TTSResponse
-from services.tts_client import synthesize_speech
+from app.models.tts import TTSRequest, TTSResponse
+from app.services.tts_client import synthesize_speech
 
 router = APIRouter()
 

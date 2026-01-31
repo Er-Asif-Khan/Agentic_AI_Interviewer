@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from models.verdict import VerdictRequest, VerdictResponse
-from services.verdict_engine import generate_verdict
-from services.llm_client import LLMError
+from app.models.verdict import VerdictRequest, VerdictResponse
+from app.services.verdict_engine import generate_verdict
+from app.services.llm_client import LLMError
 
 router = APIRouter()
 

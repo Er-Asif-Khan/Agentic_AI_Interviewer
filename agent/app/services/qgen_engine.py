@@ -1,4 +1,4 @@
-from services.llm_client import call_llm
+from app.services.llm_client import call_llm
 
 QGEN_PROMPT = """
 You are a senior technical interviewer

@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL")
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+# Azure OpenAI Configuration
+GPT_BASE_URL = os.getenv("GPT_BASE_URL")
+GPT_KEY = os.getenv("GPT_KEY")
 
 class LLMError(RuntimeError):
     pass
@@ -19,18 +19,19 @@ SYSTEM_PROMPT = (
 )
 
 def _headers() -> Dict[str, str]:
-    if not OPENROUTER_API_KEY:
-        raise LLMError("LLM API key missing")
+    if not GPT_KEY:
+        raise LLMError("GPT API key missing (GPT_KEY)")
     return {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "api-key": GPT_KEY,
         "Content-Type": "application/json",
-        "HTTP-Referer": os.getenv("SITE_URL", "http://localhost"),
-        "X-Title": os.getenv("SITE_NAME", "AI Interview Orchestrator"),
     }
 
 def _post(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not GPT_BASE_URL:
+        raise LLMError("GPT_BASE_URL not configured")
+    
     response = requests.post(
-        url=OPENROUTER_URL,
+        url=GPT_BASE_URL,
         headers=_headers(),
         json=payload,
         timeout=30,
@@ -39,16 +40,14 @@ def _post(payload: Dict[str, Any]) -> Dict[str, Any]:
     return response.json()
 
 def call_llm(user_prompt: str, max_retries: int = 2) -> Dict[str, Any]:
-    if not OPENROUTER_MODEL:
-        raise LLMError("LLM model not configured")
-    
+    # Azure OpenAI doesn't need model in payload (it's in the URL)
     payload = {
-        "model": OPENROUTER_MODEL,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.3,
+        "max_tokens": 2000,
     }
 
     start = time.time()

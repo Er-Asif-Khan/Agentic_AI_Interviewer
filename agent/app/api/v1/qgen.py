@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from models.qgen import QGenRequest, QGenResponse
-from services.qgen_engine import generate_questions
-from services.llm_client import LLMError
+from app.models.qgen import QGenRequest, QGenResponse
+from app.services.qgen_engine import generate_questions
+from app.services.llm_client import LLMError
 
 router = APIRouter()
     

@@ -3,7 +3,7 @@ load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.v1 import router as api_router
+from app.api.v1 import router as api_router
 import platform
 
 app = FastAPI(
@@ -29,7 +29,7 @@ def get_health():
 @app.get("/version")
 def version():
     return {
-        "app": "resume-ai-backend",
+        "app": "ai-interview-agent",
         "version": "1.0.0",
         "python": platform.python_version()
     }

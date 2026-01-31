@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from models.evaluation import EvaluationRequest, EvaluationResult
-from services.evaluation_engine import evaluate_answer
-from services.llm_client import LLMError
+from app.models.evaluation import EvaluationRequest, EvaluationResult
+from app.services.evaluation_engine import evaluate_answer
+from app.services.llm_client import LLMError
 
 router = APIRouter()
 

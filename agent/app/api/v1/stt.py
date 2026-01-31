@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.concurrency import run_in_threadpool
-import tempfile, os, time
-from services.stt_client import transcribe_audio
+import time
+from app.services.stt_client import transcribe_audio
 
 router = APIRouter()
 
@@ -11,19 +11,16 @@ async def speech_to_text(audio: UploadFile = File(...)):
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(413, "Audio too large")
     
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tmp.write(content)
-        path = tmp.name
-
     try:
         start = time.time()
-        text = await run_in_threadpool(transcribe_audio, path)
+        # Pass audio bytes directly to Azure STT
+        text = await run_in_threadpool(transcribe_audio, content)
         duration = time.time() - start
-    finally:
-        os.remove(path)
+    except Exception as e:
+        raise HTTPException(500, f"Transcription failed: {str(e)}")
 
-    words = text.split()
-    confidence = min(0.95, 0.5 + len(words)/100)
+    words = text.split() if text else []
+    confidence = min(0.95, 0.5 + len(words)/100) if words else 0.0
 
     return {
         "transcript": text,

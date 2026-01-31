@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from services.resume_extractor import extract_resume_text
+from app.services.resume_extractor import extract_resume_text
 import tempfile, os
 
 router = APIRouter()

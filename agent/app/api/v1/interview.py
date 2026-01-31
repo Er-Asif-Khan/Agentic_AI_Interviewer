@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from models.interview import InterviewNextStepRequest, InterviewNextStepResponse
-from services.interview_logic import decide_next_step
-from services.followup_engine import generate_followup
-from services.tts_client import synthesize_speech
-from services.llm_client import LLMError
+from app.models.interview import InterviewNextStepRequest, InterviewNextStepResponse
+from app.services.interview_logic import decide_next_step
+from app.services.followup_engine import generate_followup
+from app.services.tts_client import synthesize_speech
+from app.services.llm_client import LLMError
 
 router = APIRouter()
 
