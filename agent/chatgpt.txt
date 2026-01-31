@@ -1,0 +1,758 @@
+app/api/v1/__init__.py:
+from fastapi import APIRouter
+from . import resume, qgen, stt, tts, evaluate, interview, verdict
+
+router = APIRouter()
+
+router.include_router(resume.router, prefix="/resume", tags=["Resume"])
+router.include_router(qgen.router, prefix="/qgen", tags=["Question Generation"])
+router.include_router(stt.router, prefix="/stt", tags=["Speech to Text"])
+router.include_router(tts.router, prefix="/tts", tags=["Text to Speech"])
+router.include_router(evaluate.router, prefix="/evaluate", tags=["Evaluation"])
+router.include_router(interview.router, prefix="/interview", tags=["Interview Orchestration"])
+router.include_router(verdict.router, prefix="/verdict", tags=["Interview Verdict"])
+
+
+app/api/v1/evaluate.py:
+from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from models.evaluation import EvaluationRequest, EvaluationResult
+from services.evaluation_engine import evaluate_answer
+from services.llm_client import LLMError
+
+router = APIRouter()
+
+@router.post("/", response_model=EvaluationResult)
+async def evaluate(payload: EvaluationRequest):
+    try:
+        return await run_in_threadpool(
+            evaluate_answer,
+            payload.question,
+            payload.answer,
+            payload.resume_context
+        )
+    except LLMError:
+        raise HTTPException(status_code=502, detail="Evaluation service temporarily unavailable")
+
+
+app/api/v1/interview.py:
+from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from models.interview import InterviewNextStepRequest, InterviewNextStepResponse
+from services.interview_logic import decide_next_step
+from services.followup_engine import generate_followup
+from services.tts_client import synthesize_speech
+from services.llm_client import LLMError
+
+router = APIRouter()
+
+@router.post("/next-step", response_model=InterviewNextStepResponse)
+async def interview_next_step(payload: InterviewNextStepRequest):
+    decision = decide_next_step(payload.evaluation, payload.asked_count)
+
+    if decision.action == "end":
+        return InterviewNextStepResponse(action="end")
+    
+    try:
+        if decision.action == "followup":
+            if not payload.evaluation:
+                raise HTTPException(400, "Evaluation required")
+            
+            question = await run_in_threadpool(
+                generate_followup,
+                payload.evaluation.question,
+                payload.evaluation.weak_areas,
+                payload.evaluation.feedback
+            )
+        else:
+            if payload.asked_count >= len(payload.questions):
+                return InterviewNextStepResponse(action="end")
+            question = payload.questions[payload.asked_count]
+
+        audio = await run_in_threadpool(synthesize_speech, question)
+
+        return InterviewNextStepResponse(
+            action=decision.action,
+            question=question,
+            audio=audio
+        )
+    
+    except LLMError:
+        raise HTTPException(502, "Interview service temporarily unavailable")
+
+
+app/api/v1/qgen.py:
+from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from models.qgen import QGenRequest, QGenResponse
+from services.qgen_engine import generate_questions
+from services.llm_client import LLMError
+
+router = APIRouter()
+    
+@router.post("/", response_model=QGenResponse)
+async def qgen(payload: QGenRequest):
+    if len(payload.resume_context) > 8000:
+        raise HTTPException(400, "Resume context too large")
+    
+    try:
+        questions = await run_in_threadpool(
+            generate_questions,
+            payload.resume_context,
+            payload.role
+        )
+        return {"questions": questions}
+    except LLMError:
+        raise HTTPException(502, "Question generation unavailable")
+
+
+app/api/v1/resume.py:
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from services.resume_extractor import extract_resume_text
+import tempfile, os
+
+router = APIRouter()
+
+ALLOWED_EXTENSIONS = {".pdf", ".docx"}
+
+@router.post("/context")
+async def extract_context(file: UploadFile = File(...)):
+    ext = os.path.splitext(file.filename.lower())[1]
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(400, "Only PDF and DOCX supported")
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+
+    try:
+        resume_text = extract_resume_text(tmp_path)
+    finally:
+        os.remove(tmp_path)
+
+    if not resume_text.strip():
+        raise HTTPException(400, "Failed to extract resume text")
+    
+    resume_text = " ".join(resume_text.split())
+    
+    return {
+        "resume_context": resume_text[:6000],
+        "length": len(resume_text)
+    }
+
+
+app/api/v1/stt.py:
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.concurrency import run_in_threadpool
+import tempfile, os, time
+from services.stt_client import transcribe_audio
+
+router = APIRouter()
+
+@router.post("/")
+async def speech_to_text(audio: UploadFile = File(...)):
+    content = await audio.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Audio too large")
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(content)
+        path = tmp.name
+
+    try:
+        start = time.time()
+        text = await run_in_threadpool(transcribe_audio, path)
+        duration = time.time() - start
+    finally:
+        os.remove(path)
+
+    words = text.split()
+    confidence = min(0.95, 0.5 + len(words)/100)
+
+    return {
+        "transcript": text,
+        "confidence": round(confidence, 2),
+        "response_time_sec": round(duration, 2),
+        "action": "proceed" if len(words) >= 3 else "repeat"
+    }
+
+
+app/api/v1/tts.py:
+from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from models.tts import TTSRequest, TTSResponse
+from services.tts_client import synthesize_speech
+
+router = APIRouter()
+
+@router.post("/", response_model=TTSResponse)
+async def text_to_speech(payload: TTSRequest):
+    try:
+        audio = await run_in_threadpool(synthesize_speech, payload.text)
+        return TTSResponse(audio=audio)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+app/api/v1/verdict.py:
+from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from models.verdict import VerdictRequest, VerdictResponse
+from services.verdict_engine import generate_verdict
+from services.llm_client import LLMError
+
+router = APIRouter()
+
+@router.post("/", response_model=VerdictResponse)
+async def interview_verdict(payload: VerdictRequest):
+    try:
+        return await run_in_threadpool(
+            generate_verdict,
+            payload.session_context,
+            payload.role
+        )
+    except LLMError:
+        raise HTTPException(502, "Verdict service unavailable")
+
+
+app/config/interview_rules.py:
+MAX_QUESTIONS = 10
+MIN_PASS_SCORE = 6.0
+MIN_CONFIDENCE = 0.5
+
+
+app/models/stt/vosk-model-en-us-0.22/:
+#vosk model directory
+
+
+app/models/evaluation.py:
+from pydantic import BaseModel
+from typing import List
+
+class EvaluationResult(BaseModel):
+    score: float
+    strengths: List[str]
+    weak_areas: List[str]
+    feedback: str
+    confidence: float
+
+class EvaluationRequest(BaseModel):
+    question: str
+    answer: str
+    resume_context: str | None = ""
+
+
+app/models/interview.py:
+from pydantic import BaseModel
+from typing import List, Optional
+from models.evaluation import EvaluationResult
+
+class InterviewNextStepRequest(BaseModel):
+    resume_context: str
+    role: str
+    questions: List[str]
+    asked_count: int
+    evaluation: Optional[EvaluationResult] = None
+
+class InterviewNextStepResponse(BaseModel):
+    action: str
+    question: Optional[str] = None
+    audio: Optional[str] = None
+
+
+app/models/qgen.py:
+from pydantic import BaseModel
+from typing import List
+
+class QGenResponse(BaseModel):
+    questions: List[str]
+
+class QGenRequest(BaseModel):
+    resume_context: str
+    role: str
+
+
+app/models/tts.py:
+from pydantic import BaseModel, Field
+
+class TTSRequest(BaseModel):
+    text: str = Field(
+        ...,
+        min_length=5,
+        description="Text to convert into speech"
+    )
+
+class TTSResponse(BaseModel):
+    audio: str = Field(
+        ...,
+        description="Base64-encoded MP3 audio"
+    )
+
+
+app/models/verdict.py:
+from pydantic import BaseModel
+from typing import List, Dict, Any
+
+class VerdictResponse(BaseModel):
+    interview_readiness_score: int
+    hire_signal: str
+    summary: str
+    strengths: List[str]
+    key_gaps: List[str]
+    actionable_next_steps: List[str]
+
+class VerdictRequest(BaseModel):
+    role: str
+    session_context: List[Dict[str, Any]]
+
+
+app/services/evaluation_engine.py:
+from services.llm_client import call_llm
+
+EVAL_PROMPT = """
+You are a senior technical interviewer.
+
+Question:
+{question}
+
+Candidate Answer:
+{answer}
+
+Resume Context:
+{resume}
+
+Evaluate the answer like a real interviewer.
+
+Return STRICT JSON:
+{{
+  "score": number between 0 and 10,
+  "strengths": [string],
+  "weak_areas": [string],
+  "feedback": string
+}}
+"""
+
+def evaluate_answer(question: str, answer: str, resume_context: str = ""):
+    prompt = EVAL_PROMPT.format(
+        question=question,
+        answer=answer,
+        resume=resume_context[:3000]
+    )
+
+    response = call_llm(prompt)
+
+    return {
+        "score": round(response["score"], 1),
+        "strengths": response["strengths"],
+        "weak_areas": response["weak_areas"],
+        "feedback": response["feedback"],
+        "confidence": min(1.0, response.get("score", 7) / 10),
+    }
+
+
+app/services/followup_engine.py:
+from services.llm_client import call_llm
+
+FOLLOWUP_PROMPT = """
+You are a senior technical interviewer.
+
+Original Question:
+{question}
+
+Candidate Answer:
+{answer}
+
+Identified Weak Areas:
+{weak}
+
+Generate ONE realistic follow-up question.
+Rules:
+- Probe reasoning depth
+- Ask WHY, TRADE-OFFS, or FAILURE SCENARIOS
+- Avoid definitions
+- Sound like a human interviewer
+Return STRICT JSON:
+{{ "followup": string }}
+"""
+
+def generate_followup(previous_question: str, weak_areas: list, answer: str) -> str:
+    prompt = FOLLOWUP_PROMPT.format(
+        question = previous_question,
+        answer = answer,
+        weak = ", ".join(weak_areas)
+    )
+
+    result = call_llm(prompt)
+    return result["followup"]
+
+
+app/services/interview_logic.py:
+from pydantic import BaseModel
+from config.interview_rules import MAX_QUESTIONS, MIN_PASS_SCORE, MIN_CONFIDENCE
+from models.evaluation import EvaluationResult
+
+class InterviewDecision(BaseModel):
+    action: str
+
+def decide_next_step(evaluation: EvaluationResult | None, asked_count: int) -> InterviewDecision:
+    if asked_count >= MAX_QUESTIONS:
+        return InterviewDecision(action="end")
+
+    if not evaluation:
+        return InterviewDecision(action="next")
+  
+    if evaluation.confidence < MIN_CONFIDENCE:
+        return InterviewDecision(action="followup")
+
+    if evaluation.score < MIN_PASS_SCORE and evaluation.weak_areas:
+        return InterviewDecision(action="followup")
+    
+    return InterviewDecision(action="next")
+
+
+app/services/llm_client.py:
+import os, json, time, requests
+from typing import Dict, Any, Optional
+from dotenv import load_dotenv
+
+load_dotenv()
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+class LLMError(RuntimeError):
+    pass
+
+SYSTEM_PROMPT = (
+    "You are a senior FAANG-level technical interviewer. "
+    "You MUST follow instructions exactly. "
+    "You MUST return ONLY valid JSON as requested. "
+    "Do NOT add explanations, markdown, or extra text."
+)
+
+def _headers() -> Dict[str, str]:
+    if not OPENROUTER_API_KEY:
+        raise LLMError("LLM API key missing")
+    return {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": os.getenv("SITE_URL", "http://localhost"),
+        "X-Title": os.getenv("SITE_NAME", "AI Interview Orchestrator"),
+    }
+
+def _post(payload: Dict[str, Any]) -> Dict[str, Any]:
+    response = requests.post(
+        url=OPENROUTER_URL,
+        headers=_headers(),
+        json=payload,
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()
+
+def call_llm(user_prompt: str, max_retries: int = 2) -> Dict[str, Any]:
+    if not OPENROUTER_MODEL:
+        raise LLMError("LLM model not configured")
+    
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.3,
+    }
+
+    start = time.time()
+    last_error = None
+    
+    for attempt in range(max_retries + 1):
+        try:
+            raw = _post(payload)
+            content = raw.get("choices", [{}])[0].get("message", {}).get("content")
+
+            if not content:
+                raise LLMError("Empty response from LLM")
+            
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError as e:
+                raise LLMError(f"Invalid JSON from LLM: {content}") from e
+            
+        except (requests.RequestException, LLMError) as e:
+            last_error = e
+            if attempt < max_retries:
+                time.sleep(1.5 * (attempt + 1))
+            else: 
+                break
+
+    duration = round(time.time() - start, 2)
+
+    raise LLMError(
+        f"LLM call failed after {duration}s: {last_error}"
+    )
+
+
+app/services/qgen_engine.py:
+from services.llm_client import call_llm
+
+QGEN_PROMPT = """
+You are a senior technical interviewer
+
+Candidate resume:
+{resume}
+
+Target role: {role}
+
+Generate exactly 10 real interview questions.
+Rules:
+- Questions must be open-ended
+- Ask experience-based questions
+- Ask HOW, WHY, and DECISION-based questions
+- Avoid definitions
+- Sound like a real interviewer
+Return STRICT JSON:
+{{
+  "questions": [string]
+}}
+"""
+
+def generate_questions(resume_context: str, role: str):
+    prompt = QGEN_PROMPT.format(
+        role = role,
+        resume = resume_context[:4000]
+    )
+
+    result = call_llm(prompt)
+    return result["questions"]
+
+
+app/services/resume_extractor.py:
+import pdfplumber
+from docx import Document
+
+def extract_resume_text(path: str) -> str:
+    if path.endswith(".pdf"):
+        return _extract_pdf(path)
+    if path.endswith(".docx"):
+        return _extract_docx(path)
+    return ""
+
+def _extract_pdf(path: str) -> str:
+    text = []
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            content = page.extract_text()
+            if content:
+                text.append(content)
+    return "\n".join(text)
+
+def _extract_docx(path: str) -> str:
+    doc = Document(path)
+    return "\n".join(p.text for p in doc.paragraphs if p.text)
+
+
+app/services/session_analyzer.py:
+from services.llm_client import call_llm
+
+SESSION_PROMPT = """
+You are a senior FAANG interviewer.
+
+Interview session:
+{session}
+
+Role: {role}
+
+Analyze across the ENTIRE interview.
+Analyze like a real interview.
+Return STRICT JSON:
+{{
+  "consistency": string,
+  "communication_trend": string,
+  "technical_depth_trend": string,
+  "strengths": [string],
+  "improvement_suggestions": [string]
+}}
+"""
+
+def analyze_session(session_context: list, role: str):
+    prompt = SESSION_PROMPT.format(
+        session = session_context,
+        role = role
+    )
+    
+    return call_llm(prompt)
+
+
+app/services/stt_client.py:
+import json, wave
+from vosk import Model, KaldiRecognizer
+
+MODEL_PATH = "models/stt/vosk-model-en-us-0.22"
+model = Model(MODEL_PATH)
+
+def transcribe_audio(path: str) -> str:
+    wf = wave.open(path, "rb")
+    rec = KaldiRecognizer(model, wf.getframerate())
+    transcript = ""
+
+    while True:
+        data = wf.readframes(4000)
+        if len(data) == 0:
+            break
+        if rec.AcceptWaveform(data):
+            result = rec.Result()
+            transcript += json.loads(result).get("text", "")
+    
+    transcript += json.loads(rec.FinalResult()).get("text", "")
+    return transcript.strip()
+
+
+app/services/tts_client.py:
+from gtts import gTTS
+import base64, tempfile, os
+
+def synthesize_speech(text: str) -> str:
+    if not text or len(text.strip()) < 5:
+        raise ValueError("Text too short for TTS")
+    
+    tts = gTTS(text = text, lang="en")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
+        path = tmp.name
+        tts.save(path)
+
+    with open(path, "rb") as f:
+        data = f.read()
+
+    os.remove(path)
+
+    return base64.b64encode(data).decode("utf-8")
+
+
+app/services/verdict_engine.py:
+from services.llm_client import call_llm
+
+VERDICT_PROMPT = """
+You are a senior FAANG interviewer.
+
+Interview session data:
+{session}
+
+Role: {role}
+
+Analyze the full interview and return STRICT JSON:
+{{
+  "interview_readiness_score": number between 0 and 100,
+  "hire_signal": "Hire" | "Borderline" | "No-Hire",
+  "summary": string,
+  "strengths": [string],
+  "key_gaps": [string],
+  "actionable_next_steps": [string]
+}}
+"""
+
+def generate_verdict(session_context: list, role: str) -> dict:
+    prompt = VERDICT_PROMPT.format(
+        session=session_context,
+        role=role
+    )
+
+    result = call_llm(prompt)
+
+    score = max(0, min(100, result["interview_readiness_score"]))
+
+    return {
+        "interview_readiness_score": score,
+        "hire_signal": result["hire_signal"],
+        "summary": result["summary"],
+        "strengths": result["strengths"],
+        "key_gaps": result["key_gaps"],
+        "actionable_next_steps": result["actionable_next_steps"], 
+    }
+
+
+app/main.py:
+from dotenv import load_dotenv
+load_dotenv()
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from api.v1 import router as api_router
+import platform
+
+app = FastAPI(
+    title="AI Interview Orchestration Service",
+    description="Stateless AI backend for resume-based voice interviews",
+    version="1.0.0"
+)
+
+app.include_router(api_router, prefix="/api/v1")
+
+app.add_middleware(
+    CORSMiddleware, 
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"], 
+    allow_credentials=True,
+)
+
+@app.get("/health")
+def get_health():
+    return {"status": "ok"}
+
+@app.get("/version")
+def version():
+    return {
+        "app": "resume-ai-backend",
+        "version": "1.0.0",
+        "python": platform.python_version()
+    }
+
+
+.env:
+OPENROUTER_API_KEY="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"
+OPENROUTER_MODEL="openai/gpt-oss-20b:free"
+
+
+.gitignore:
+.env
+
+
+requirements.txt:
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.12.0
+certifi==2025.11.12
+cffi==2.0.0
+charset-normalizer==3.4.4
+click==8.1.8
+colorama==0.4.6
+cryptography==46.0.3
+exceptiongroup==1.3.1
+fastapi==0.127.0
+gTTS==2.5.4
+h11==0.16.0
+idna==3.11
+lxml==6.0.2
+pdfminer.six==20251107
+pdfplumber==0.11.8
+pillow==12.0.0
+psutil==7.2.0
+pycparser==2.23
+pydantic==2.12.5
+pydantic_core==2.41.5
+pypdfium2==5.2.0
+python-docx==1.2.0
+python-dotenv==1.2.1
+python-multipart==0.0.21
+requests==2.32.5
+srt==3.5.3
+starlette==0.50.0
+tqdm==4.67.1
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+urllib3==2.6.2
+uvicorn==0.40.0
+vosk==0.3.45
+websockets==15.0.1

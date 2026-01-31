@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+venv/
+node_modules/
+*.mp3
+*.wav
+*.mp4
+*.zip
+*.log
+# Large ML models
+app/models/stt/vosk-model-en-us-0.22/
