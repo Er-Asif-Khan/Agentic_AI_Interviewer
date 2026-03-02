@@ -1,5 +1,12 @@
-import pdfplumber
-from docx import Document
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
+
+try:
+    from docx import Document
+except ImportError:
+    Document = None
 
 def extract_resume_text(path: str) -> str:
     if path.endswith(".pdf"):
