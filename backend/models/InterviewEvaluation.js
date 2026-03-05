@@ -11,6 +11,10 @@ const transcriptEntrySchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    answer: {
+      type: String,
+      default: undefined,
+    },
     timestamp: {
       type: Number, // seconds from start of interview
     },

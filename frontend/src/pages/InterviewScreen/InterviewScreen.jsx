@@ -243,7 +243,7 @@ export default function InterviewScreen() {
       // 3. Save evaluation to database
       const rating = Math.round((verdict.interview_readiness_score ?? 50) / 10);
       const transcript = pairs.map((p) => ({
-        speaker: "Question",
+        speaker: "ai",
         text: p.question,
         answer: p.answer,
       }));
@@ -536,6 +536,23 @@ export default function InterviewScreen() {
               <ul style={{ color: "#e0c0a0", margin: 0, paddingLeft: "1.2rem" }}>
                 {finalVerdict.key_gaps.map((g, i) => <li key={i}>{g}</li>)}
               </ul>
+            </div>
+          )}
+
+          {qaPairs?.length > 0 && (
+            <div style={{ background: "#2a2a3e", borderRadius: 12, padding: "1rem 1.5rem", marginBottom: "1.5rem", textAlign: "left" }}>
+              <div style={{ color: "#667eea", fontSize: "0.85rem", marginBottom: "0.8rem", fontWeight: 600 }}>
+                <i className="fas fa-comments" style={{ marginRight: "0.5rem" }}></i>
+                Interview Transcript
+              </div>
+              <div style={{ maxHeight: 240, overflowY: "auto" }}>
+                {qaPairs.map((pair, i) => (
+                  <div key={i} style={{ marginBottom: "1rem", paddingBottom: "1rem", borderBottom: i < qaPairs.length - 1 ? "1px solid #3a3a4e" : "none" }}>
+                    <div style={{ color: "#667eea", fontSize: "0.8rem", marginBottom: "0.3rem" }}>Q{i + 1}: {pair.question}</div>
+                    <div style={{ color: "#c0c0d0", fontSize: "0.9rem", paddingLeft: "1rem" }}>A: {pair.answer}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
