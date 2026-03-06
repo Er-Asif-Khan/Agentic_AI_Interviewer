@@ -5,28 +5,20 @@ const axios = require("axios");
 const path = require("path");
 const fs = require("fs");
 
-// @desc    Start a new interview session
+// @desc    Start a new interview session (mock or hiring)
 // @route   POST /api/interviews/start
+// @body    { role? } - Optional role for mock interviews
 exports.startInterview = async (req, res) => {
   try {
-    const { candidateId, jobId } = req.body;
-
-    if (!candidateId || !jobId) {
-      return res.status(400).json({
-        success: false,
-        message: "Candidate ID and Job ID are required",
-      });
-    }
-
-    const interviewId = `${candidateId}-${jobId}-${Date.now()}`;
+    const userId = req.user?.id || "anonymous";
+    const { role } = req.body || {};
+    const interviewId = `mock-${userId}-${Date.now()}`;
 
     res.status(201).json({
       success: true,
       message: "Interview started successfully",
       data: {
         interviewId,
-        candidateId,
-        jobId,
         status: "in-progress",
         startedAt: new Date().toISOString(),
       },
@@ -94,49 +86,54 @@ exports.endInterview = async (req, res) => {
   }
 };
 
-// @desc    Evaluate interview (AI processing result)
+// @desc    Evaluate interview (AI processing result) - supports mock interviews
 // @route   POST /api/interviews/:id/evaluate
-// @body    { candidateId, jobId, hrId, rating, summary, interpretation, shouldHire, transcript }
+// @body    { rating, summary, interpretation, shouldHire, transcript } (candidateId, jobId, hrId optional for mock)
 exports.evaluateInterview = async (req, res) => {
   try {
     const { id } = req.params;
     const { candidateId, jobId, hrId, rating, summary, interpretation, shouldHire, transcript } =
       req.body;
 
-    if (!candidateId || !jobId || !hrId) {
+    if (!rating || summary == null || interpretation == null || shouldHire == null) {
       return res.status(400).json({
         success: false,
-        message: "candidateId, jobId and hrId are required",
+        message: "rating, summary, interpretation, and shouldHire are required",
       });
     }
 
+    const updateData = {
+      interviewId: id,
+      rating,
+      summary,
+      interpretation,
+      shouldHire,
+      transcript: transcript || [],
+    };
+
+    if (candidateId) updateData.candidate = candidateId;
+    if (jobId) updateData.job = jobId;
+    if (hrId) updateData.hr = hrId;
+
     const evaluation = await InterviewEvaluation.findOneAndUpdate(
       { interviewId: id },
-      {
-        interviewId: id,
-        candidate: candidateId,
-        job: jobId,
-        hr: hrId,
-        rating,
-        summary,
-        interpretation,
-        shouldHire,
-        transcript,
-      },
+      updateData,
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
-    await Application.findOneAndUpdate(
-      { candidate: candidateId, job: jobId },
-      {
-        rating,
-        summary,
-        interpretation,
-        shouldHire,
-        interviewEvaluation: evaluation._id,
-        status: "reviewed",
-      }
-    );
+    if (candidateId && jobId) {
+      await Application.findOneAndUpdate(
+        { candidate: candidateId, job: jobId },
+        {
+          rating,
+          summary,
+          interpretation,
+          shouldHire,
+          interviewEvaluation: evaluation._id,
+          status: "reviewed",
+        }
+      );
+    }
 
     res.status(200).json({
       success: true,

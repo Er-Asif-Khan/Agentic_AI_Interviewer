@@ -2,8 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Home from "./pages/Home";
 import Login from "./pages/Login/Login";
 import Signup from "./pages/Signup/Signup";
-import CandidateDashboard from "./pages/CandidateDashboard/CandidateDashboard";
-import HRDashboard from "./pages/HRDashboard/HRDashboard";
+import MockInterviewSetup from "./pages/MockInterviewSetup/MockInterviewSetup";
 import InterviewScreen from "./pages/InterviewScreen/InterviewScreen";
 import NotFound from "./pages/NotFound/NotFound";
 import ProtectedRoute from "./components/global/ProtectedRoute/ProtectedRoute";
@@ -17,30 +16,23 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Signup />} />
 
-        {/* Protected: Candidate only */}
+        {/* Protected: Mock interview */}
         <Route
-          path="/candidates/dashboard"
+          path="/mock-interview"
           element={
-            <ProtectedRoute role="candidate">
-              <CandidateDashboard />
+            <ProtectedRoute>
+              <MockInterviewSetup />
             </ProtectedRoute>
           }
         />
+        {/* Backward compatibility */}
+        <Route path="/candidates/dashboard" element={<Navigate to="/mock-interview" replace />} />
+
         <Route
           path="/interview"
           element={
-            <ProtectedRoute role="candidate">
+            <ProtectedRoute>
               <InterviewScreen />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Protected: HR only */}
-        <Route
-          path="/hr/dashboard"
-          element={
-            <ProtectedRoute role="hr">
-              <HRDashboard />
             </ProtectedRoute>
           }
         />

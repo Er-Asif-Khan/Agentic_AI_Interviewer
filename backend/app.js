@@ -11,8 +11,6 @@ const authRoutes = require("./routes/authRoutes");
 const candidateRoutes = require("./routes/candidateRoutes");
 const jobRoutes = require("./routes/jobRoutes");
 const interviewRoutes = require("./routes/interviewRoutes");
-const hrRoutes = require("./routes/hrRoutes");
-
 // Initialize Express app
 const app = express();
 
@@ -97,8 +95,6 @@ app.use("/api/auth", authRoutes);
 app.use("/api/candidates", candidateRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/interviews", interviewRoutes);
-app.use("/api/hr", hrRoutes);
-
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({

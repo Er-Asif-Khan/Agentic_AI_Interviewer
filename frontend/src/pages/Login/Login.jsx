@@ -71,13 +71,12 @@ export default function Login() {
       const userRole = res.data.user.role;
       // Assuming your backend sends back: { token: "...", role: "hr" }
       
-      if (userRole === "hr") {
-        navigate("/hr/dashboard");
-      } else if (userRole === "candidate") {
-        navigate("/candidates/dashboard");
+      // This app now runs as a mock interview platform (no HR dashboard).
+      // Send all users to the mock interview setup page.
+      if (userRole === "candidate" || userRole === "hr") {
+        navigate("/mock-interview");
       } else {
-        // Fallback
-        navigate("/");
+        navigate("/mock-interview");
       }
     } catch (err) {
       // Handle Errors (e.g., Wrong password)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import "./InterviewScreen.css";
 import API from "../../config";
 
@@ -14,9 +14,8 @@ const STATUS = {
 
 export default function InterviewScreen() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const applicationId = searchParams.get("applicationId");
-  const jobId = searchParams.get("jobId");
+  const location = useLocation();
+  const { resumeContext: initResumeContext, role: initRole, interviewId: initInterviewId } = location.state || {};
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [status, setStatus] = useState(STATUS.LOADING);
@@ -37,11 +36,10 @@ export default function InterviewScreen() {
   const [qaPairs, setQaPairs] = useState([]);          // [{question, answer, evaluation}]
   const [finalVerdict, setFinalVerdict] = useState(null);
 
-  // ── Session meta (fetched on load) ──────────────────────────────────────────
-  const [interviewId, setInterviewId] = useState(null);
-  const [resumeContext, setResumeContext] = useState("");
-  const [jobRole, setJobRole] = useState("");
-  const [appMeta, setAppMeta] = useState(null);        // { candidateId, hrId }
+  // ── Session meta (from Mock Interview setup) ─────────────────────────────────
+  const [interviewId, setInterviewId] = useState(initInterviewId || null);
+  const [resumeContext, setResumeContext] = useState(initResumeContext || "");
+  const [jobRole, setJobRole] = useState(initRole || "");
 
   // ── Refs ────────────────────────────────────────────────────────────────────
   const candidateVideoRef = useRef(null);
@@ -63,9 +61,9 @@ export default function InterviewScreen() {
 
   // ── Bootstrap the interview ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!applicationId || !jobId) {
-      alert("Missing interview parameters. Redirecting...");
-      navigate("/candidates/dashboard");
+    if (!initResumeContext || !initRole || !initInterviewId) {
+      alert("Missing setup. Please start from the Mock Interview page.");
+      navigate("/mock-interview");
       return;
     }
     initInterview();
@@ -75,48 +73,20 @@ export default function InterviewScreen() {
       window.speechSynthesis?.cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicationId, jobId]);
+  }, [initResumeContext, initRole, initInterviewId]);
 
   const initInterview = async () => {
     try {
-      // 1. Fetch application to get resumeUrl, job title, hrId, candidateId
-      setLoadingMessage("Fetching application details...");
-      const appRes = await API.get("/candidates/applications");
-      const application = appRes.data.data.find((a) => a._id === applicationId);
-      if (!application) throw new Error("Application not found");
-
-      const role = application.job?.title || "Software Engineer";
-      const candidateId = application.candidate;
-      const hrId = application.hr;
-      const resumeUrl = application.resumeUrl;
+      const role = initRole;
+      const rContext = initResumeContext;
+      const iId = initInterviewId;
 
       setJobRole(role);
-      setAppMeta({ candidateId, hrId });
-
-      // 2. Start an interview session on backend to get interviewId
-      setLoadingMessage("Starting interview session...");
-      const startRes = await API.post("/interviews/start", { candidateId, jobId });
-      const iId = startRes.data.data.interviewId;
-      setInterviewId(iId);
-
-      // 3. Extract resume context from Cloudinary URL
-      setLoadingMessage("Reading your resume...");
-      let rContext = "";
-      if (resumeUrl) {
-        try {
-          const extractRes = await API.post("/interviews/extract-resume-url", { resumeUrl });
-          rContext = extractRes.data.data.resume_context || "";
-        } catch (extractErr) {
-          console.warn("Resume extraction failed, proceeding without context:", extractErr.message);
-          rContext = `Candidate applying for ${role} position.`;
-        }
-      } else {
-        rContext = `Candidate applying for ${role} position.`;
-      }
       setResumeContext(rContext);
+      setInterviewId(iId);
       resumeContextRef.current = rContext;
 
-      // 4. Generate AI questions
+      // Generate AI questions
       setLoadingMessage("AI is generating questions tailored to your resume...");
       const qRes = await API.post("/interviews/generate-questions", {
         resumeContext: rContext,
@@ -128,16 +98,16 @@ export default function InterviewScreen() {
       setQuestions(generatedQuestions);
       questionsRef.current = generatedQuestions;
 
-      // 5. Start countdown → begin interview
+      // Start countdown → begin interview
       setStatus(STATUS.COUNTDOWN);
       startCountdown(3, () => {
         startCamera();
-        beginQuestion(generatedQuestions, 0, iId, rContext, role, candidateId, hrId);
+        beginQuestion(generatedQuestions, 0, iId, rContext, role, null, null);
       });
     } catch (err) {
       console.error("Interview init failed:", err);
       alert(`Failed to start interview: ${err.message}. Please try again.`);
-      navigate("/candidates/dashboard");
+      navigate("/mock-interview");
     }
   };
 
@@ -207,8 +177,7 @@ export default function InterviewScreen() {
 
     // Move to next question
     const nextIndex = questionIndexRef.current + 1;
-    const { candidateId, hrId } = appMeta || {};
-    beginQuestion(questionsRef.current, nextIndex, interviewId, rCtx, jobRole, candidateId, hrId);
+    beginQuestion(questionsRef.current, nextIndex, interviewId, rCtx, jobRole, null, null);
   };
 
   // ── Finish interview ────────────────────────────────────────────────────────
@@ -248,10 +217,7 @@ export default function InterviewScreen() {
         answer: p.answer,
       }));
 
-      await API.post(`/interviews/${iId}/evaluate`, {
-        candidateId,
-        jobId,
-        hrId,
+      const evalPayload = {
         rating,
         summary: verdict.summary,
         interpretation: [
@@ -260,7 +226,11 @@ export default function InterviewScreen() {
         ].join("\n"),
         shouldHire: verdict.hire_signal === "Hire",
         transcript,
-      });
+      };
+      if (candidateId) evalPayload.candidateId = candidateId;
+      if (jobId) evalPayload.jobId = jobId;
+      if (hrId) evalPayload.hrId = hrId;
+      await API.post(`/interviews/${iId}/evaluate`, evalPayload);
 
       setStatus(STATUS.COMPLETED);
       statusRef.current = STATUS.COMPLETED;
@@ -466,7 +436,7 @@ export default function InterviewScreen() {
     stopListening();
     stopCamera();
     window.speechSynthesis?.cancel();
-    navigate("/candidates/dashboard");
+    navigate("/mock-interview");
   };
 
   // ── RENDER ──────────────────────────────────────────────────────────────────
@@ -557,10 +527,10 @@ export default function InterviewScreen() {
           )}
 
           <button
-            onClick={() => navigate("/candidates/dashboard")}
+            onClick={() => navigate("/mock-interview")}
             style={{ background: "linear-gradient(135deg,#667eea,#764ba2)", color: "#fff", border: "none", borderRadius: 10, padding: "0.9rem 2.5rem", fontSize: "1rem", fontWeight: 600, cursor: "pointer", width: "100%" }}
           >
-            Back to Dashboard
+            Back to Mock Interview
           </button>
         </div>
       </div>
