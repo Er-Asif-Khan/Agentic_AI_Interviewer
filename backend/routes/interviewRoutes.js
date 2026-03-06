@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 const interviewController = require("../controllers/interviewController");
+const { protect } = require("../middleware/auth");
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({
@@ -23,7 +24,7 @@ const upload = multer({
 // @route   POST /api/interviews/extract-resume
 // @desc    Extract resume context using AI agent (file upload)
 // @access  Private
-router.post("/extract-resume", upload.single("resume"), interviewController.extractResume);
+router.post("/extract-resume", protect, upload.single("resume"), interviewController.extractResume);
 
 // @route   POST /api/interviews/extract-resume-url
 // @desc    Extract resume context from a remote URL (Cloudinary etc.)
@@ -33,17 +34,17 @@ router.post("/extract-resume-url", interviewController.extractResumeFromUrl);
 // @route   POST /api/interviews/generate-questions
 // @desc    Generate interview questions using AI agent
 // @access  Private
-router.post("/generate-questions", interviewController.generateQuestions);
+router.post("/generate-questions", protect, interviewController.generateQuestions);
 
 // @route   POST /api/interviews/evaluate-answer
 // @desc    Evaluate answer using AI agent
 // @access  Private
-router.post("/evaluate-answer", interviewController.evaluateAnswerAPI);
+router.post("/evaluate-answer", protect, interviewController.evaluateAnswerAPI);
 
 // @route   POST /api/interviews/final-verdict
 // @desc    Get final verdict using AI agent
 // @access  Private
-router.post("/final-verdict", interviewController.getFinalVerdict);
+router.post("/final-verdict", protect, interviewController.getFinalVerdict);
 
 // @route   GET /api/interviews/agent-health
 // @desc    Check AI agent health
@@ -54,7 +55,7 @@ router.get("/agent-health", interviewController.checkAgentHealth);
 // @route   POST /api/interviews/start
 // @desc    Start a new interview session
 // @access  Private
-router.post("/start", interviewController.startInterview);
+router.post("/start", protect, interviewController.startInterview);
 
 // @route   GET /api/interviews/:id
 // @desc    Get interview details
@@ -68,8 +69,8 @@ router.post("/:id/end", interviewController.endInterview);
 
 // @route   POST /api/interviews/:id/evaluate
 // @desc    Evaluate interview (AI processing)
-// @access  Private (HR)
-router.post("/:id/evaluate", interviewController.evaluateInterview);
+// @access  Private
+router.post("/:id/evaluate", protect, interviewController.evaluateInterview);
 
 // @route   GET /api/interviews/candidate/:candidateId
 // @desc    Get all interviews for a candidate
