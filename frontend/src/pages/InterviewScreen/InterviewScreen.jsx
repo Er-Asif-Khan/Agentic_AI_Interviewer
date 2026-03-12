@@ -245,7 +245,10 @@ export default function InterviewScreen() {
   // ── Camera ──────────────────────────────────────────────────────────────────
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      // Request video only — audio is handled exclusively by SpeechRecognition.
+      // Capturing audio here via getUserMedia conflicts with webkitSpeechRecognition
+      // on Windows/Chrome, causing the Speech API to silently fail (audio-capture error).
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       streamRef.current = stream;
       if (candidateVideoRef.current) candidateVideoRef.current.srcObject = stream;
     } catch (err) {
@@ -363,13 +366,32 @@ export default function InterviewScreen() {
     };
 
     recognition.onend = () => {
-      // Auto-restart if still in-progress (keeps listening until user clicks submit)
-      // The confirmedText closure persists across restarts so transcript is not lost
-      if (statusRef.current === STATUS.IN_PROGRESS) {
-        try { recognition.start(); } catch (_) {}
-      } else {
+      if (statusRef.current !== STATUS.IN_PROGRESS) {
         setIsRecording(false);
+        return;
       }
+      // Small delay prevents "InvalidStateError: recognition has already started"
+      // race condition on Windows/Chrome where onend fires before the internal
+      // audio pipeline has fully shut down.
+      // The confirmedText closure persists across restarts so transcript is never lost.
+      setTimeout(() => {
+        if (statusRef.current !== STATUS.IN_PROGRESS) {
+          setIsRecording(false);
+          return;
+        }
+        try {
+          recognition.start();
+        } catch (err) {
+          console.warn("Speech recognition restart failed, retrying in 1s:", err);
+          setIsRecording(false);
+          // One more attempt after a longer pause
+          setTimeout(() => {
+            if (statusRef.current === STATUS.IN_PROGRESS) {
+              try { recognition.start(); } catch (_) {}
+            }
+          }, 1000);
+        }
+      }, 150);
     };
 
     try {
