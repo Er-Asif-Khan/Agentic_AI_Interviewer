@@ -228,7 +228,6 @@ export default function InterviewScreen() {
         transcript,
       };
       if (candidateId) evalPayload.candidateId = candidateId;
-      if (jobId) evalPayload.jobId = jobId;
       if (hrId) evalPayload.hrId = hrId;
       await API.post(`/interviews/${iId}/evaluate`, evalPayload);
 
@@ -236,7 +235,20 @@ export default function InterviewScreen() {
       statusRef.current = STATUS.COMPLETED;
     } catch (err) {
       console.error("Final verdict error:", err);
-      // Still show completed so user isn't stuck
+      // Build a fallback verdict from per-question evaluations so users always see results
+      const fallbackPairs = qaPairsRef.current;
+      const scores = fallbackPairs.map(p => p.evaluation?.score ?? 5);
+      const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) : 50;
+      const strengths = fallbackPairs.flatMap(p => p.evaluation?.strengths ?? []).filter(Boolean).slice(0, 3);
+      const gaps = fallbackPairs.flatMap(p => p.evaluation?.weak_areas ?? []).filter(Boolean).slice(0, 3);
+      setFinalVerdict({
+        interview_readiness_score: avgScore,
+        hire_signal: avgScore >= 70 ? "Hire" : avgScore >= 50 ? "Borderline" : "No-Hire",
+        summary: "Evaluation generated from individual answer scores (detailed AI summary was unavailable).",
+        strengths: strengths.length ? strengths : ["Completed all interview questions"],
+        key_gaps: gaps.length ? gaps : [],
+        actionable_next_steps: ["Review individual answer feedback for detailed improvements"],
+      });
       setStatus(STATUS.COMPLETED);
       statusRef.current = STATUS.COMPLETED;
     }
@@ -489,7 +501,7 @@ export default function InterviewScreen() {
     const signalColor = signal === "Hire" ? "#10b981" : signal === "Borderline" ? "#f59e0b" : "#ef4444";
 
     return (
-      <div className="interview-screen" style={{ display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "1.5rem", padding: "2rem", overflowY: "auto" }}>
+      <div className="interview-screen" style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", flexDirection: "column", gap: "1.5rem", padding: "2rem", paddingTop: "3rem", overflowY: "auto" }}>
         <div style={{ background: "#1e1e2e", borderRadius: 16, padding: "2.5rem", maxWidth: 600, width: "100%", textAlign: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}>
           <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🎉</div>
           <h2 style={{ color: "#fff", marginBottom: "0.5rem" }}>Interview Complete!</h2>
