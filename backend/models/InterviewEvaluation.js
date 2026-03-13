@@ -18,6 +18,48 @@ const transcriptEntrySchema = new mongoose.Schema(
     timestamp: {
       type: Number, // seconds from start of interview
     },
+    difficulty_level: {
+      type: Number,
+      min: 1,
+      max: 5,
+      default: null, // backward compatible
+    },
+    topic: {
+      type: String,
+      default: null,
+    },
+    candidate_score: {
+      type: Number,
+      min: 0,
+      max: 10,
+      default: null,
+    },
+    response_time: {
+      type: Number, // seconds taken to respond
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
+const difficultyProgressionSchema = new mongoose.Schema(
+  {
+    question_number: {
+      type: Number,
+      required: true,
+    },
+    difficulty_level: {
+      type: Number,
+      min: 1,
+      max: 5,
+      required: true,
+    },
+    candidate_score: {
+      type: Number,
+      min: 0,
+      max: 10,
+      default: null,
+    },
   },
   { _id: false }
 );
@@ -58,6 +100,7 @@ const interviewEvaluationSchema = new mongoose.Schema(
       required: true,
     },
     transcript: [transcriptEntrySchema],
+    difficulty_progression: [difficultyProgressionSchema],
   },
   { timestamps: true }
 );

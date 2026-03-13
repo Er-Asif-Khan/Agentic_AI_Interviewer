@@ -21,6 +21,7 @@ exports.startInterview = async (req, res) => {
         interviewId,
         status: "in-progress",
         startedAt: new Date().toISOString(),
+        currentDifficulty: 2, // default starting difficulty (Bloom's level 2)
       },
     });
   } catch (error) {
@@ -270,7 +271,7 @@ exports.extractResume = async (req, res) => {
 // @route   POST /api/interviews/generate-questions
 exports.generateQuestions = async (req, res) => {
   try {
-    const { resumeContext, role } = req.body;
+    const { resumeContext, role, difficultyLevel, topic } = req.body;
 
     if (!resumeContext || !role) {
       return res.status(400).json({
@@ -279,7 +280,12 @@ exports.generateQuestions = async (req, res) => {
       });
     }
 
-    const result = await agentService.generateQuestions(resumeContext, role);
+    const result = await agentService.generateQuestions(
+      resumeContext,
+      role,
+      difficultyLevel || 2,
+      topic || null
+    );
 
     res.status(200).json({
       success: true,
@@ -294,11 +300,11 @@ exports.generateQuestions = async (req, res) => {
   }
 };
 
-// @desc    Evaluate answer using AI agent
+// @desc    Evaluate answer using AI agent (with adaptive difficulty)
 // @route   POST /api/interviews/evaluate-answer
 exports.evaluateAnswerAPI = async (req, res) => {
   try {
-    const { question, answer, resumeContext } = req.body;
+    const { question, answer, resumeContext, currentDifficulty } = req.body;
 
     if (!question || !answer || !resumeContext) {
       return res.status(400).json({
@@ -313,9 +319,23 @@ exports.evaluateAnswerAPI = async (req, res) => {
       resumeContext
     );
 
+    // --- Adaptive difficulty adjustment ---
+    const difficulty = currentDifficulty || 2;
+    const score = result.score || 0;
+    let nextDifficulty = difficulty;
+    if (score >= 8.0) {
+      nextDifficulty = Math.min(difficulty + 1, 5);
+    } else if (score < 5.0) {
+      nextDifficulty = Math.max(difficulty - 1, 1);
+    }
+
     res.status(200).json({
       success: true,
-      data: result,
+      data: {
+        ...result,
+        currentDifficulty: difficulty,
+        nextDifficulty,
+      },
     });
   } catch (error) {
     res.status(500).json({
@@ -370,6 +390,36 @@ exports.checkAgentHealth = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to check agent health",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get difficulty analytics report for a session
+// @route   POST /api/interviews/difficulty-analytics
+exports.getDifficultyAnalytics = async (req, res) => {
+  try {
+    const { difficultyProgression } = req.body;
+
+    if (!difficultyProgression || !Array.isArray(difficultyProgression)) {
+      return res.status(400).json({
+        success: false,
+        message: "difficultyProgression array is required",
+      });
+    }
+
+    const result = await agentService.getDifficultyAnalytics(
+      difficultyProgression
+    );
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to get difficulty analytics",
       error: error.message,
     });
   }

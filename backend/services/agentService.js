@@ -45,17 +45,23 @@ class AgentService {
   }
 
   /**
-   * Generate interview questions based on resume and role
+   * Generate interview questions based on resume, role, and difficulty
    * @param {String} resumeContext - Extracted resume text
    * @param {String} role - Job role/title
+   * @param {Number} [difficultyLevel=2] - Bloom's taxonomy level (1-5)
+   * @param {String} [topic=null] - Optional topic focus
    * @returns {Promise<{questions: string[]}>}
    */
-  async generateQuestions(resumeContext, role) {
+  async generateQuestions(resumeContext, role, difficultyLevel = 2, topic = null) {
     try {
-      const response = await this.client.post("/qgen", {
+      const payload = {
         resume_context: resumeContext,
         role: role,
-      });
+        difficulty_level: difficultyLevel,
+      };
+      if (topic) payload.topic = topic;
+
+      const response = await this.client.post("/qgen", payload);
 
       return response.data;
     } catch (error) {
@@ -155,6 +161,26 @@ class AgentService {
       console.error("Error in speech-to-text:", error.message);
       throw new Error(
         error.response?.data?.detail || "Failed to transcribe speech"
+      );
+    }
+  }
+
+  /**
+   * Get difficulty analytics report for a session
+   * @param {Array} difficultyProgression - Array of {question_number, difficulty_level, candidate_score}
+   * @returns {Promise<Object>} Difficulty analytics report
+   */
+  async getDifficultyAnalytics(difficultyProgression) {
+    try {
+      const response = await this.client.post("/difficulty-analytics", {
+        difficulty_progression: difficultyProgression,
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error("Error getting difficulty analytics:", error.message);
+      throw new Error(
+        error.response?.data?.detail || "Failed to get difficulty analytics"
       );
     }
   }
