@@ -1,21 +1,22 @@
+import { Link } from "react-router-dom";
 import "./Cta.css";
 
 export default function Cta() {
   return (
     <section className="cta-section">
       <div className="cta-content">
-        <h2>Ready to Transform Your Hiring Process?</h2>
+        <h2>Ready to Nail Your Next Interview?</h2>
         <p>
-          Join thousands of teams already using Recruit.ai to speed up hiring,
-          improve candidate evaluation, and make smarter talent decisions.
+          Join thousands of job seekers using Interview-X to practice, get
+          instant feedback, and walk into real interviews with confidence.
         </p>
         <div className="cta-buttons">
-          <a href="/signup" className="cta-btn primary">
+          <Link to="/register" className="cta-btn primary">
             <i className="fas fa-user-plus"></i> Create Free Account
-          </a>
-          <a href="/login" className="cta-btn primary">
+          </Link>
+          <Link to="/login" className="cta-btn primary">
             <i className="fas fa-sign-in-alt"></i> Sign In
-          </a>
+          </Link>
         </div>
       </div>
     </section>

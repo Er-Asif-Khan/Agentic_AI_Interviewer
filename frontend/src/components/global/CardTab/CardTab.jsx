@@ -5,40 +5,40 @@ export default function CardTab({ Title, Desc }) {
   return (
     <section className="features" id="features">
       <div className="container">
-        <h2 className="section-title">Why Choose recruit.ai?</h2>
+        <h2 className="section-title">Why Choose Interview-X?</h2>
         <p className="section-subtitle">
-          Everything you need to streamline interviews and hire faster
+          Everything you need to practice and improve your interview skills
         </p>
 
         <div className="features-grid">
           <Card
-            Title="Real-Time Candidate Insights"
-            Desc="Track candidate responses in real-time with clean, interactive analytics. Get instant clarity on skill fit, communication quality, and overall performance."
+            Title="Real-Time Performance Feedback"
+            Desc="Get instant feedback on your answers as you practice. See how you're doing with live analysis of your communication, clarity, and structure."
             icon="fas fa-chart-line"
           />
           <Card
-            Title="AI-Driven Interview Scoring"
-            Desc="Let advanced AI evaluate every answer with precision. Receive automated scoring, competency breakdowns, and detailed skill-fit metrics."
+            Title="AI-Powered Answer Scoring"
+            Desc="Our AI evaluates every response with precision. Receive automated scores, competency breakdowns, and actionable improvement suggestions."
             icon="fas fa-star-half-alt"
           />
           <Card
-            Title="Smart Question Personalization"
-            Desc="Generate tailored interview questions based on job role and candidate profile. Ensure every interview stays relevant, structured, and efficient."
+            Title="Personalized Practice Sessions"
+            Desc="Choose your role, domain, and difficulty level. Get tailored questions that match real interview scenarios you'll face in your field."
             icon="fas fa-magic"
           />
           <Card
-            Title="Automated Report Generation"
-            Desc="Receive polished, shareable interview reports instantly. Includes transcripts, performance highlights, improvement areas, and final recommendations."
+            Title="Detailed Practice Reports"
+            Desc="Review your performance with polished reports. Includes transcripts, strengths, areas to improve, and tips for your next real interview."
             icon="fas fa-file-alt"
           />
           <Card
-            Title="Seamless Multi-Role Support"
-            Desc="Designed for both candidates and HR teams. Switch views easily and access the exact tools you need for smooth interview workflows."
-            icon="fas fa-users-cog"
+            Title="Practice Anytime, Anywhere"
+            Desc="No scheduling needed. Start a mock interview in seconds—practice on your own time and at your own pace until you feel confident."
+            icon="fas fa-clock"
           />
           <Card
-            Title="Secure, Scalable Infrastructure"
-            Desc="Built with enterprise-grade security and scalability. Your interview data stays encrypted, compliant, and ready to handle growing hiring needs."
+            Title="Safe, Private Practice"
+            Desc="Your practice data stays private and secure. Build confidence without the pressure—no recruiters, just you and the AI improving together."
             icon="fas fa-lock"
           />
         </div>

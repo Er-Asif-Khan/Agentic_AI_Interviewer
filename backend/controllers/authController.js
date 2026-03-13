@@ -14,13 +14,12 @@ const signToken = (user) => {
 // @route   POST /api/auth/register
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, role, candidateProfile, hrProfile } =
-      req.body;
+    const { name, email, password } = req.body;
 
-    if (!name || !email || !password || !role) {
+    if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Please provide name, email, password and role",
+        message: "Please provide name, email and password",
       });
     }
 
@@ -39,9 +38,6 @@ exports.register = async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      role,
-      candidateProfile: role === "candidate" ? candidateProfile : undefined,
-      hrProfile: role === "hr" ? hrProfile : undefined,
     });
 
     const token = signToken(user);

@@ -67,17 +67,8 @@ export default function Login() {
       // 2. SAVE TOKEN
       localStorage.setItem("token", res.data.token);
 
-      // 3. CHECK ROLE
-      const userRole = res.data.user.role;
-      // Assuming your backend sends back: { token: "...", role: "hr" }
-      
-      // This app now runs as a mock interview platform (no HR dashboard).
-      // Send all users to the mock interview setup page.
-      if (userRole === "candidate" || userRole === "hr") {
-        navigate("/mock-interview");
-      } else {
-        navigate("/mock-interview");
-      }
+      // All users go to mock interview setup
+      navigate("/mock-interview");
     } catch (err) {
       // Handle Errors (e.g., Wrong password)
       console.error(err);

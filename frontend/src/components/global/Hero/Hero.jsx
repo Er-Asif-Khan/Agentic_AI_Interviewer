@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import "./Hero.css";
 
 export default function Hero() {
@@ -5,25 +6,23 @@ export default function Hero() {
     <section className="hero">
       <div className="hero-content">
         <h1>
-          Reinventing the Future of <br />
-          Hiring Intelligence
+          Practice Makes Perfect: <br />
+          AI-Powered Mock Interviews
         </h1>
         <p className="subtitle">
-          Real-time AI interviewing for smarter recruitment
+          Sharpen your interview skills with realistic AI-driven practice sessions
         </p>
         <p className="description">
-          Transform your hiring process with AI-driven interviews, real-time
-          candidate analysis, and intelligent recommendations. 
-          Join teams
-          already speeding up hiring while improving fairness and decision
-          quality.
+          Get instant feedback, improve your answers, and build confidence before
+          your real interview. Our AI simulates real interview scenarios so you
+          can practice anytime, anywhere—and land your dream job.
         </p>
         <div className="cta-buttons">
-          <a href="/signup" className="cta-btn primary">
-            <i className="fas fa-rocket"></i> Start Free Trial
-          </a>
+          <Link to="/register" className="cta-btn primary">
+            <i className="fas fa-rocket"></i> Start Practicing Free
+          </Link>
           <a href="#features" className="cta-btn secondary">
-            <i className="fas fa-play-circle"></i> Watch Demo
+            <i className="fas fa-play-circle"></i> See Features
           </a>
         </div>
       </div>

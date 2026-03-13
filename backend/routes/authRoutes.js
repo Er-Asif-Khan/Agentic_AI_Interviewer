@@ -3,7 +3,7 @@ const router = express.Router();
 const authController = require("../controllers/authController");
 
 // @route   POST /api/auth/register
-// @desc    Register a new user (candidate or HR)
+// @desc    Register a new user
 // @access  Public
 router.post("/register", authController.register);
 
