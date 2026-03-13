@@ -15,8 +15,11 @@ async def qgen(payload: QGenRequest):
         questions = await run_in_threadpool(
             generate_questions,
             payload.resume_context,
-            payload.role
+            payload.role,
+            payload.difficulty_level,
+            payload.topic,
         )
         return {"questions": questions}
     except LLMError:
         raise HTTPException(502, "Question generation unavailable")
+

@@ -51,6 +51,11 @@ router.post("/final-verdict", protect, interviewController.getFinalVerdict);
 // @access  Public
 router.get("/agent-health", interviewController.checkAgentHealth);
 
+// @route   POST /api/interviews/difficulty-analytics
+// @desc    Get difficulty analytics report for a session
+// @access  Private
+router.post("/difficulty-analytics", protect, interviewController.getDifficultyAnalytics);
+
 // Interview Session Routes
 // @route   POST /api/interviews/start
 // @desc    Start a new interview session
