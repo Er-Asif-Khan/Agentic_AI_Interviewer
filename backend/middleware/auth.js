@@ -64,20 +64,20 @@ exports.isHR = async (req, res, next) => {
   }
 };
 
-// @desc    Check if user is Candidate
+// @desc    Check if user is authenticated (all users in mock interview app)
 exports.isCandidate = async (req, res, next) => {
   try {
-    if (!req.user || req.user.role !== "candidate") {
+    if (!req.user) {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Candidate role required.",
+        message: "Access denied. Please log in.",
       });
     }
     next();
   } catch (error) {
     res.status(403).json({
       success: false,
-      message: "Access denied. Candidate role required.",
+      message: "Access denied.",
     });
   }
 };

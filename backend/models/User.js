@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const candidateProfileSchema = new mongoose.Schema(
+const userProfileSchema = new mongoose.Schema(
   {
     fullName: { type: String, trim: true },
     headline: { type: String, trim: true },
@@ -9,16 +9,6 @@ const candidateProfileSchema = new mongoose.Schema(
     skills: [{ type: String, trim: true }],
     resumeUrl: { type: String, trim: true },
     phone: { type: String, trim: true },
-  },
-  { _id: false }
-);
-
-const hrProfileSchema = new mongoose.Schema(
-  {
-    companyName: { type: String, trim: true },
-    companyWebsite: { type: String, trim: true },
-    positionTitle: { type: String, trim: true },
-    department: { type: String, trim: true },
   },
   { _id: false }
 );
@@ -44,11 +34,10 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["candidate", "hr"],
-      required: true,
+      enum: ["user", "candidate", "hr"],
+      default: "user",
     },
-    candidateProfile: candidateProfileSchema,
-    hrProfile: hrProfileSchema,
+    userProfile: userProfileSchema,
     isActive: {
       type: Boolean,
       default: true,

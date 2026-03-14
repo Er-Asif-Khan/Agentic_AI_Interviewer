@@ -58,7 +58,6 @@ export default function Signup() {
     name: "",
     email: "",
     password: "",
-    role: "candidate",
   });
   
   const navigate = useNavigate();
@@ -103,6 +102,7 @@ export default function Signup() {
             type="text"
             name="name"
             placeholder="Full Name"
+            value={formData.name}
             required
             onChange={handleChange}
           />
@@ -111,6 +111,7 @@ export default function Signup() {
             type="email"
             name="email"
             placeholder="Email"
+            value={formData.email}
             required
             onChange={handleChange}
           />
@@ -119,15 +120,11 @@ export default function Signup() {
             type="password"
             name="password"
             placeholder="Password"
+            value={formData.password}
             minLength="6"
             required
             onChange={handleChange}
           />
-
-          <select name="role" onChange={handleChange}>
-            <option value="candidate">Candidate</option>
-            <option value="hr">HR</option>
-          </select>
 
           <button type="submit" disabled={loading}>
             {loading ? "Creating Account..." : <><i className="fas fa-user-plus"></i> Sign Up</>}
