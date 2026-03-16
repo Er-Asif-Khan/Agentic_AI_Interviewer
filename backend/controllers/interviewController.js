@@ -1,9 +1,12 @@
 const InterviewEvaluation = require("../models/InterviewEvaluation");
 const Application = require("../models/Application");
 const agentService = require("../services/agentService");
+const { computeInterviewScore } = require("../behavioral_ai/scoring");
 const axios = require("axios");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
+const { spawn } = require("child_process");
 
 // @desc    Start a new interview session (mock or hiring)
 // @route   POST /api/interviews/start
@@ -41,7 +44,9 @@ exports.getInterview = async (req, res) => {
 
     const evaluation = await InterviewEvaluation.findOne({
       interviewId: id,
-    }).populate("candidate job hr");
+    })
+      .populate("candidate job hr")
+      .lean();
 
     if (!evaluation) {
       return res.status(404).json({
@@ -50,9 +55,33 @@ exports.getInterview = async (req, res) => {
       });
     }
 
+    const transcript = Array.isArray(evaluation.transcript)
+      ? evaluation.transcript.map((entry) => {
+          const base = { ...entry };
+          const a = entry?.analysis || null;
+          if (!a) {
+            base.analysis = null;
+            return base;
+          }
+
+          base.analysis = {
+            hesitation_rate: a.hesitation_rate ?? 0,
+            filler_word_count: a.filler_word_count ?? 0,
+            average_sentence_length: a.average_sentence_length ?? 0,
+            confidence_score: a.confidence_score ?? 0,
+            interruptions: a.interruptions ?? 0,
+          };
+
+          return base;
+        })
+      : [];
+
     res.status(200).json({
       success: true,
-      data: evaluation,
+      data: {
+        ...evaluation,
+        transcript,
+      },
     });
   } catch (error) {
     res.status(500).json({
@@ -112,6 +141,18 @@ exports.evaluateInterview = async (req, res) => {
       transcript: transcript || [],
     };
 
+    // Compute behavioral-aware scoring breakdown if we have transcript data.
+    try {
+      const score = computeInterviewScore({
+        rating,
+        transcript: transcript || [],
+      });
+      updateData.score_breakdown = score;
+    } catch (err) {
+      // Do not fail the request if scoring computation fails.
+      console.error("Failed to compute interview score breakdown:", err.message);
+    }
+
     if (candidateId) updateData.candidate = candidateId;
     if (jobId) updateData.job = jobId;
     if (hrId) updateData.hr = hrId;
@@ -169,6 +210,128 @@ exports.getCandidateInterviews = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Download a PDF interview report
+// @route   GET /api/interviews/:id/report
+exports.getInterviewReport = async (req, res) => {
+  let outputPath = null;
+
+  try {
+    const { id } = req.params;
+
+    const evaluation = await InterviewEvaluation.findOne({
+      interviewId: id,
+    })
+      .populate("candidate job hr")
+      .lean();
+
+    if (!evaluation) {
+      return res.status(404).json({
+        success: false,
+        message: "Interview not found",
+      });
+    }
+
+    const candidateName =
+      evaluation?.candidate?.userProfile?.fullName ||
+      evaluation?.candidate?.name ||
+      "Unknown Candidate";
+
+    // Ensure transcript entries contain the fields the report generator expects.
+    const transcript = Array.isArray(evaluation.transcript)
+      ? evaluation.transcript.map((entry) => ({
+          ...entry,
+          question: entry.question || entry.text || "",
+          answer: entry.answer || "",
+          candidate_score:
+            entry.candidate_score != null ? entry.candidate_score : null,
+          analysis: entry.analysis || null,
+        }))
+      : [];
+
+    const sessionData = {
+      candidate_name: candidateName,
+      interview_date: evaluation.createdAt || new Date().toISOString(),
+      transcript,
+    };
+
+    const safeId = String(id).replace(/[^a-zA-Z0-9-_]/g, "_");
+    outputPath = path.join(
+      os.tmpdir(),
+      `interview-report-${safeId}-${Date.now()}.pdf`
+    );
+
+    const scriptPath = path.join(
+      __dirname,
+      "..",
+      "reports",
+      "report_generator.py"
+    );
+
+    const pythonExe = process.env.PYTHON_PATH || "python";
+    const sessionJson = JSON.stringify(sessionData);
+
+    const child = spawn(pythonExe, [scriptPath, sessionJson, outputPath], {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (err) => {
+      console.error("Failed to start report generator:", err.message);
+    });
+
+    child.on("close", (code) => {
+      if (code !== 0) {
+        console.error("Report generator failed:", stderr || `exit code ${code}`);
+        if (outputPath && fs.existsSync(outputPath)) {
+          try {
+            fs.unlinkSync(outputPath);
+          } catch (_) {}
+        }
+        return res.status(500).json({
+          success: false,
+          message: "Failed to generate interview report",
+        });
+      }
+
+      if (!outputPath || !fs.existsSync(outputPath)) {
+        console.error("Report generator finished, but PDF not found.");
+        return res.status(500).json({
+          success: false,
+          message: "Report generation did not produce a PDF file",
+        });
+      }
+
+      const downloadName = `interview-report-${safeId}.pdf`;
+      return res.download(outputPath, downloadName, (err) => {
+        if (err) {
+          console.error("Report download failed:", err.message);
+        }
+        // Best-effort cleanup
+        try {
+          fs.unlinkSync(outputPath);
+        } catch (_) {}
+      });
+    });
+  } catch (error) {
+    console.error("getInterviewReport error:", error.message);
+    if (outputPath && fs.existsSync(outputPath)) {
+      try {
+        fs.unlinkSync(outputPath);
+      } catch (_) {}
+    }
+    return res.status(500).json({
       success: false,
       message: "Server error",
       error: error.message,
