@@ -549,13 +549,37 @@ export default function InterviewScreen() {
                 <i className="fas fa-comments" style={{ marginRight: "0.5rem" }}></i>
                 Interview Transcript
               </div>
-              <div style={{ maxHeight: 240, overflowY: "auto" }}>
-                {qaPairs.map((pair, i) => (
-                  <div key={i} style={{ marginBottom: "1rem", paddingBottom: "1rem", borderBottom: i < qaPairs.length - 1 ? "1px solid #3a3a4e" : "none" }}>
-                    <div style={{ color: "#667eea", fontSize: "0.8rem", marginBottom: "0.3rem" }}>Q{i + 1}: {pair.question}</div>
-                    <div style={{ color: "#c0c0d0", fontSize: "0.9rem", paddingLeft: "1rem" }}>A: {pair.answer}</div>
-                  </div>
-                ))}
+              <div style={{ maxHeight: 320, overflowY: "auto" }}>
+                {qaPairs.map((pair, i) => {
+                  const score = pair.evaluation?.score ?? null;
+                  const scoreColor =
+                    score === null ? "#a0a0b0"
+                    : score >= 7 ? "#10b981"
+                    : score >= 5 ? "#f59e0b"
+                    : "#ef4444";
+                  return (
+                    <div key={i} style={{ marginBottom: "1rem", paddingBottom: "1rem", borderBottom: i < qaPairs.length - 1 ? "1px solid #3a3a4e" : "none" }}>
+                      {/* Question row with score badge */}
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.3rem" }}>
+                        <div style={{ color: "#667eea", fontSize: "0.8rem", flex: 1 }}>Q{i + 1}: {pair.question}</div>
+                        <div style={{
+                          background: scoreColor + "22",
+                          color: scoreColor,
+                          border: `1px solid ${scoreColor}55`,
+                          borderRadius: 6,
+                          padding: "0.15rem 0.55rem",
+                          fontSize: "0.75rem",
+                          fontWeight: 700,
+                          whiteSpace: "nowrap",
+                          flexShrink: 0,
+                        }}>
+                          {score !== null ? `${score}/10` : "—/10"}
+                        </div>
+                      </div>
+                      <div style={{ color: "#c0c0d0", fontSize: "0.9rem", paddingLeft: "1rem" }}>A: {pair.answer}</div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
