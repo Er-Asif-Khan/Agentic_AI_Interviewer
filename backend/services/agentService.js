@@ -50,14 +50,16 @@ class AgentService {
    * @param {String} role - Job role/title
    * @param {Number} [difficultyLevel=2] - Bloom's taxonomy level (1-5)
    * @param {String} [topic=null] - Optional topic focus
+   * @param {Number} [count=10] - Number of questions to generate (1-10)
    * @returns {Promise<{questions: string[]}>}
    */
-  async generateQuestions(resumeContext, role, difficultyLevel = 2, topic = null) {
+  async generateQuestions(resumeContext, role, difficultyLevel = 2, topic = null, count = 10) {
     try {
       const payload = {
         resume_context: resumeContext,
         role: role,
         difficulty_level: difficultyLevel,
+        count: count,
       };
       if (topic) payload.topic = topic;
 
@@ -98,17 +100,20 @@ class AgentService {
 
   /**
    * Get final interview verdict
-   * @param {String} resumeContext - Resume context
-   * @param {Array} qaPairs - Array of {question, answer, evaluation} objects
+   * @param {Array} sessionContext - Session Q&A data
    * @param {String} role - Job role
+   * @param {Array} [difficultyProgression] - Optional difficulty progression data
    * @returns {Promise<Object>} Final verdict with score and recommendation
    */
-  async getFinalVerdict(sessionContext, role) {
+  async getFinalVerdict(sessionContext, role, difficultyProgression = null) {
     try {
-      const response = await this.client.post("/verdict", {
+      const payload = {
         session_context: sessionContext,
         role: role,
-      });
+      };
+      if (difficultyProgression) payload.difficulty_progression = difficultyProgression;
+
+      const response = await this.client.post("/verdict", payload);
 
       return response.data;
     } catch (error) {

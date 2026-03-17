@@ -36,6 +36,13 @@ export default function InterviewScreen() {
   const [qaPairs, setQaPairs] = useState([]);          // [{question, answer, evaluation}]
   const [finalVerdict, setFinalVerdict] = useState(null);
 
+  // ── Adaptive difficulty state ──────────────────────────────────────────────
+  const MAX_QUESTIONS = 10;
+  const [currentDifficulty, setCurrentDifficulty] = useState(2);
+  const [difficultyProgression, setDifficultyProgression] = useState([]);
+  const currentDifficultyRef = useRef(2);
+  const difficultyProgressionRef = useRef([]);
+
   // ── Session meta (from Mock Interview setup) ─────────────────────────────────
   const [interviewId, setInterviewId] = useState(initInterviewId || null);
   const [resumeContext, setResumeContext] = useState(initResumeContext || "");
@@ -58,6 +65,8 @@ export default function InterviewScreen() {
   useEffect(() => { questionsRef.current = questions; }, [questions]);
   useEffect(() => { resumeContextRef.current = resumeContext; }, [resumeContext]);
   useEffect(() => { statusRef.current = status; }, [status]);
+  useEffect(() => { currentDifficultyRef.current = currentDifficulty; }, [currentDifficulty]);
+  useEffect(() => { difficultyProgressionRef.current = difficultyProgression; }, [difficultyProgression]);
 
   // ── Bootstrap the interview ─────────────────────────────────────────────────
   useEffect(() => {
@@ -86,11 +95,13 @@ export default function InterviewScreen() {
       setInterviewId(iId);
       resumeContextRef.current = rContext;
 
-      // Generate AI questions
-      setLoadingMessage("AI is generating questions tailored to your resume...");
+      // Generate first question at default difficulty (Level 2)
+      setLoadingMessage("AI is generating your first question...");
       const qRes = await API.post("/interviews/generate-questions", {
         resumeContext: rContext,
         role,
+        difficultyLevel: 2,
+        count: 1,
       });
       const generatedQuestions = qRes.data.data.questions || [];
       if (generatedQuestions.length === 0) throw new Error("No questions generated");
@@ -128,7 +139,7 @@ export default function InterviewScreen() {
 
   // ── Ask a question ──────────────────────────────────────────────────────────
   const beginQuestion = (qs, index, iId, rCtx, role, candidateId, hrId) => {
-    if (index >= qs.length) {
+    if (index >= qs.length || index >= MAX_QUESTIONS) {
       finishInterview(iId, rCtx, role, candidateId, hrId);
       return;
     }
@@ -152,32 +163,81 @@ export default function InterviewScreen() {
     const answer = currentTranscript.trim() || "(no answer provided)";
     const question = questionsRef.current[questionIndexRef.current];
     const rCtx = resumeContextRef.current;
+    const difficulty = currentDifficultyRef.current;
 
     setStatus(STATUS.EVALUATING);
     statusRef.current = STATUS.EVALUATING;
+    setLoadingMessage("AI is evaluating your answer...");
     setCurrentTranscript("");
 
+    // 1. Evaluate the answer (with current difficulty)
     let evaluation = null;
+    let nextDifficulty = difficulty;
     try {
       const evalRes = await API.post("/interviews/evaluate-answer", {
         question,
         answer,
         resumeContext: rCtx,
+        currentDifficulty: difficulty,
       });
       evaluation = evalRes.data.data;
+      nextDifficulty = evaluation.nextDifficulty || difficulty;
     } catch (err) {
       console.warn("Evaluation failed, continuing:", err.message);
       evaluation = { score: 5, feedback: "Evaluation unavailable", strengths: [], weak_areas: [], confidence: 0.5 };
     }
 
-    const newPair = { question, answer, evaluation };
+    // 2. Store Q&A pair
+    const newPair = { question, answer, evaluation, difficulty };
     const updated = [...qaPairsRef.current, newPair];
     qaPairsRef.current = updated;
     setQaPairs(updated);
 
-    // Move to next question
+    // 3. Record difficulty progression
     const nextIndex = questionIndexRef.current + 1;
-    beginQuestion(questionsRef.current, nextIndex, interviewId, rCtx, jobRole, null, null);
+    const progressionEntry = {
+      question_number: nextIndex,
+      difficulty_level: difficulty,
+      candidate_score: evaluation.score ?? 5,
+    };
+    const updatedProgression = [...difficultyProgressionRef.current, progressionEntry];
+    difficultyProgressionRef.current = updatedProgression;
+    setDifficultyProgression(updatedProgression);
+
+    // 4. Update difficulty for next question
+    setCurrentDifficulty(nextDifficulty);
+    currentDifficultyRef.current = nextDifficulty;
+
+    // 5. Check if we've reached max questions
+    if (nextIndex >= MAX_QUESTIONS) {
+      finishInterview(interviewId, rCtx, jobRole, null, null);
+      return;
+    }
+
+    // 6. Generate next question at the adjusted difficulty
+    setLoadingMessage(`Generating next question (Difficulty Level ${nextDifficulty})...`);
+    try {
+      const qRes = await API.post("/interviews/generate-questions", {
+        resumeContext: rCtx,
+        role: jobRole,
+        difficultyLevel: nextDifficulty,
+        count: 1,
+      });
+      const newQuestions = qRes.data.data.questions || [];
+      if (newQuestions.length === 0) throw new Error("No question generated");
+
+      // Append new question to the questions array
+      const allQuestions = [...questionsRef.current, newQuestions[0]];
+      questionsRef.current = allQuestions;
+      setQuestions(allQuestions);
+
+      // Ask the next question
+      beginQuestion(allQuestions, nextIndex, interviewId, rCtx, jobRole, null, null);
+    } catch (err) {
+      console.error("Failed to generate next question:", err.message);
+      // If generation fails, end the interview gracefully
+      finishInterview(interviewId, rCtx, jobRole, null, null);
+    }
   };
 
   // ── Finish interview ────────────────────────────────────────────────────────
@@ -205,6 +265,7 @@ export default function InterviewScreen() {
       const verdictRes = await API.post("/interviews/final-verdict", {
         sessionContext,
         role,
+        difficultyProgression: difficultyProgressionRef.current,
       });
       const verdict = verdictRes.data.data;
       setFinalVerdict(verdict);
@@ -602,7 +663,7 @@ export default function InterviewScreen() {
           )}
           {currentQuestion && (
             <span className="question-indicator">
-              Question {questionIndex + 1} of {questions.length}
+              Question {questionIndex + 1} of {MAX_QUESTIONS}
             </span>
           )}
         </div>

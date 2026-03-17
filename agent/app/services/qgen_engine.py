@@ -15,7 +15,7 @@ Target role: {role}
 {topic_line}
 Difficulty Level: {level} — {level_description}
 
-Generate exactly 10 real interview questions {level_instruction}.
+Generate exactly {count} real interview question(s) {level_instruction}.
 Rules:
 - Questions must be open-ended
 - Ask experience-based questions
@@ -34,6 +34,7 @@ def generate_questions(
     role: str,
     difficulty_level: int = DEFAULT_DIFFICULTY,
     topic: str | None = None,
+    count: int = 10,
 ):
     """Generate interview questions at a specific difficulty level.
 
@@ -42,8 +43,10 @@ def generate_questions(
         role: Target job role.
         difficulty_level: Bloom's taxonomy level 1-5 (default: 2).
         topic: Optional topic to focus questions on.
+        count: Number of questions to generate (1-10, default: 10).
     """
     level = max(1, min(5, difficulty_level))  # clamp to valid range
+    count = max(1, min(10, count))
 
     topic_line = f"Focus topic: {topic}" if topic else ""
 
@@ -54,7 +57,9 @@ def generate_questions(
         level_description=DIFFICULTY_DESCRIPTIONS.get(level, ""),
         level_instruction=DIFFICULTY_PROMPT_INSTRUCTIONS.get(level, ""),
         topic_line=topic_line,
+        count=count,
     )
 
     result = call_llm(prompt)
     return result["questions"]
+

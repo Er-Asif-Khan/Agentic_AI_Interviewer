@@ -271,7 +271,7 @@ exports.extractResume = async (req, res) => {
 // @route   POST /api/interviews/generate-questions
 exports.generateQuestions = async (req, res) => {
   try {
-    const { resumeContext, role, difficultyLevel, topic } = req.body;
+    const { resumeContext, role, difficultyLevel, topic, count } = req.body;
 
     if (!resumeContext || !role) {
       return res.status(400).json({
@@ -284,7 +284,8 @@ exports.generateQuestions = async (req, res) => {
       resumeContext,
       role,
       difficultyLevel || 2,
-      topic || null
+      topic || null,
+      count || 10
     );
 
     res.status(200).json({
@@ -350,7 +351,7 @@ exports.evaluateAnswerAPI = async (req, res) => {
 // @route   POST /api/interviews/final-verdict
 exports.getFinalVerdict = async (req, res) => {
   try {
-    const { sessionContext, role } = req.body;
+    const { sessionContext, role, difficultyProgression } = req.body;
 
     if (!sessionContext || !role) {
       return res.status(400).json({
@@ -359,7 +360,7 @@ exports.getFinalVerdict = async (req, res) => {
       });
     }
 
-    const result = await agentService.getFinalVerdict(sessionContext, role);
+    const result = await agentService.getFinalVerdict(sessionContext, role, difficultyProgression);
 
     res.status(200).json({
       success: true,
