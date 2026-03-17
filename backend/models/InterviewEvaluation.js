@@ -112,6 +112,11 @@ const interviewEvaluationSchema = new mongoose.Schema(
       type: Object,
       default: null,
     },
+    // Face detection statistics from the interview session
+    face_stats: {
+      type: Object,
+      default: null,
+    },
   },
   { timestamps: true }
 );

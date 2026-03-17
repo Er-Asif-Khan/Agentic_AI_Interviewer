@@ -122,7 +122,7 @@ exports.endInterview = async (req, res) => {
 exports.evaluateInterview = async (req, res) => {
   try {
     const { id } = req.params;
-    const { candidateId, jobId, hrId, rating, summary, interpretation, shouldHire, transcript } =
+    const { candidateId, jobId, hrId, rating, summary, interpretation, shouldHire, transcript, faceStats } =
       req.body;
 
     if (!rating || summary == null || interpretation == null || shouldHire == null) {
@@ -146,8 +146,10 @@ exports.evaluateInterview = async (req, res) => {
       const score = computeInterviewScore({
         rating,
         transcript: transcript || [],
+        faceStats: faceStats || null,
       });
       updateData.score_breakdown = score;
+      if (faceStats) updateData.face_stats = faceStats;
     } catch (err) {
       // Do not fail the request if scoring computation fails.
       console.error("Failed to compute interview score breakdown:", err.message);
@@ -259,6 +261,13 @@ exports.getInterviewReport = async (req, res) => {
       candidate_name: candidateName,
       interview_date: evaluation.createdAt || new Date().toISOString(),
       transcript,
+      summary: evaluation.summary || "",
+      rating: evaluation.rating || null,
+      shouldHire: evaluation.shouldHire != null ? evaluation.shouldHire : null,
+      interpretation: evaluation.interpretation || "",
+      score_breakdown: evaluation.score_breakdown || null,
+      face_stats: evaluation.face_stats || null,
+      difficulty_progression: evaluation.difficulty_progression || [],
     };
 
     const safeId = String(id).replace(/[^a-zA-Z0-9-_]/g, "_");
@@ -313,7 +322,7 @@ exports.getInterviewReport = async (req, res) => {
         });
       }
 
-      const downloadName = `interview-report-${safeId}.pdf`;
+      const downloadName = `AletheiaX-Interview-Report-${safeId}.pdf`;
       return res.download(outputPath, downloadName, (err) => {
         if (err) {
           console.error("Report download failed:", err.message);
@@ -434,7 +443,7 @@ exports.extractResume = async (req, res) => {
 // @route   POST /api/interviews/generate-questions
 exports.generateQuestions = async (req, res) => {
   try {
-    const { resumeContext, role, difficultyLevel, topic, count } = req.body;
+    const { resumeContext, role, difficultyLevel, topic, count, previousQuestions } = req.body;
 
     if (!resumeContext || !role) {
       return res.status(400).json({
@@ -448,7 +457,8 @@ exports.generateQuestions = async (req, res) => {
       role,
       difficultyLevel || 2,
       topic || null,
-      count || 10
+      count || 10,
+      previousQuestions || null
     );
 
     res.status(200).json({

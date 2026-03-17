@@ -9,17 +9,12 @@
  * - Behavioral Metrics:     25%
  * - Confidence Trend:       10%
  *
- * Behavioral metrics consider:
- * - hesitation_rate
- * - filler_word_count
- * - interruptions
- *
- * Confidence trend uses:
- * - confidence_score
+ * Only substantive analyses (is_substantive !== false) are used.
+ * Face detection violations reduce the final score with explanation.
  */
 
 /**
- * Safely extracts all analysis objects from transcript entries.
+ * Extract substantive analysis objects from transcript entries.
  * @param {Array<Object>} transcript
  * @returns {Array<Object>}
  */
@@ -27,18 +22,19 @@ function extractAnalyses(transcript) {
   if (!Array.isArray(transcript)) return [];
   return transcript
     .map((entry) => entry && entry.analysis)
-    .filter((a) => a && typeof a === "object");
+    .filter((a) => a && typeof a === "object" && a.is_substantive !== false);
 }
 
 /**
- * Compute an aggregate behavioral score (0–100) from per-answer analyses.
+ * Compute aggregate behavioral score (0-100).
  *
- * Behavioral metrics:
- * - hesitation_rate: lower is better
- * - filler_word_count: lower is better
- * - interruptions: lower is better
+ * Uses ORIGINAL metrics:
+ * - hesitation_rate (lower is better)
+ * - filler_word_count (lower is better)
+ * - interruptions (lower is better)
  *
- * The mapping is heuristic and intentionally simple.
+ * Plus NEW metric:
+ * - vocabulary_richness (higher is better)
  *
  * @param {Array<Object>} analyses
  * @returns {number}
@@ -49,47 +45,50 @@ function computeBehavioralScore(analyses) {
   let totalHesitation = 0;
   let totalFillers = 0;
   let totalInterruptions = 0;
+  let totalVocab = 0;
 
   for (const a of analyses) {
     totalHesitation += Number(a.hesitation_rate ?? 0);
     totalFillers += Number(a.filler_word_count ?? 0);
     totalInterruptions += Number(a.interruptions ?? 0);
+    totalVocab += Number(a.vocabulary_richness ?? 0);
   }
 
-  const n = analyses.length || 1;
-  const avgHesitation = totalHesitation / n; // already a percentage
+  const n = analyses.length;
+  const avgHesitation = totalHesitation / n;
   const avgFillers = totalFillers / n;
   const avgInterruptions = totalInterruptions / n;
+  const avgVocab = totalVocab / n;
 
-  // Hesitation component: 0% -> 100, 30%+ -> 0 (linear falloff)
+  // Hesitation component (0-30): 0% -> 30, 30%+ -> 0
   const hesitationComponent = Math.max(
     0,
-    100 - Math.min(avgHesitation, 30) * (100 / 30)
+    30 * (1 - Math.min(avgHesitation, 30) / 30)
   );
 
-  // Filler component: 0 -> 100, 5+ fillers/answer -> 0 (linear falloff)
+  // Filler component (0-25): 0 -> 25, 5+ fillers/answer -> 0
   const fillerComponent = Math.max(
     0,
-    100 - Math.min(avgFillers, 5) * (100 / 5)
+    25 * (1 - Math.min(avgFillers, 5) / 5)
   );
 
-  // Interruptions component: 0 -> 100, 3+ interruptions/answer -> 0
+  // Interruptions component (0-25): 0 -> 25, 3+ -> 0
   const interruptionComponent = Math.max(
     0,
-    100 - Math.min(avgInterruptions, 3) * (100 / 3)
+    25 * (1 - Math.min(avgInterruptions, 3) / 3)
   );
 
+  // Vocabulary component (0-20): richer = better
+  const vocabComponent = avgVocab * 20;
+
   const behavioralScore =
-    (hesitationComponent + fillerComponent + interruptionComponent) / 3;
+    hesitationComponent + fillerComponent + interruptionComponent + vocabComponent;
 
   return Math.max(0, Math.min(100, behavioralScore));
 }
 
 /**
- * Compute a confidence trend score (0–100) from per-answer analyses.
- *
- * Uses `confidence_score` from each analysis; missing values are treated as 0.
- *
+ * Compute confidence trend score (0-100).
  * @param {Array<Object>} analyses
  * @returns {number}
  */
@@ -100,77 +99,86 @@ function computeConfidenceTrendScore(analyses) {
   let count = 0;
 
   for (const a of analyses) {
-    if (a.confidence_score != null) {
-      totalConfidence += Number(a.confidence_score);
+    const score = Number(a.confidence_score ?? 0);
+    if (score > 0) {
+      totalConfidence += score;
       count += 1;
     }
   }
 
   if (!count) return 0;
-
-  const avgConfidence = totalConfidence / count;
-  return Math.max(0, Math.min(100, avgConfidence));
+  return Math.max(0, Math.min(100, totalConfidence / count));
 }
 
 /**
- * Compute communication clarity (0–100).
- *
- * Currently derived as a smoothed combination of:
- * - behavioral noise (hesitation, fillers, interruptions)
- * - confidence trend
- *
- * This keeps clarity correlated with both behavior and perceived confidence.
- *
+ * Compute communication clarity (0-100).
  * @param {number} behavioralScore
  * @param {number} confidenceTrendScore
  * @returns {number}
  */
 function computeCommunicationClarityScore(behavioralScore, confidenceTrendScore) {
-  // Weight behavioral signal more heavily for clarity.
-  const clarity =
-    0.7 * behavioralScore +
-    0.3 * confidenceTrendScore;
-
-  return Math.max(0, Math.min(100, clarity));
+  return Math.max(0, Math.min(100, 0.6 * behavioralScore + 0.4 * confidenceTrendScore));
 }
 
 /**
- * Compute content quality score (0–100) from overall rating (0–10).
- *
- * This uses the existing numeric rating as the primary proxy for content.
- *
+ * Compute content quality score (0-100) from overall rating (0-10).
  * @param {number} rating
  * @returns {number}
  */
 function computeContentQualityScore(rating) {
   if (rating == null || Number.isNaN(Number(rating))) return 0;
-  const normalized = (Number(rating) / 10) * 100;
-  return Math.max(0, Math.min(100, normalized));
+  return Math.max(0, Math.min(100, (Number(rating) / 10) * 100));
 }
 
 /**
- * Compute the full scoring breakdown for an interview.
- *
- * Weights:
- * - Content Quality:        40%
- * - Communication Clarity:  25%
- * - Behavioral Metrics:     25%
- * - Confidence Trend:       10%
+ * Apply face detection penalty.
+ * @param {number} baseScore
+ * @param {Object} faceStats
+ * @returns {{ adjustedScore: number, penalty: number, reasons: string[] }}
+ */
+function applyFaceDetectionPenalty(baseScore, faceStats) {
+  if (!faceStats || !faceStats.totalChecks) {
+    return { adjustedScore: baseScore, penalty: 0, reasons: [] };
+  }
+
+  const { totalChecks, noFaceCount = 0, multipleFaceCount = 0 } = faceStats;
+  const reasons = [];
+  let totalPenalty = 0;
+
+  if (noFaceCount > 0) {
+    const noFaceRate = noFaceCount / totalChecks;
+    const penalty = Math.min(10, noFaceRate * 20);
+    totalPenalty += penalty;
+    reasons.push(
+      `Face not detected in ${noFaceCount}/${totalChecks} checks (${(noFaceRate * 100).toFixed(0)}%) — ${penalty.toFixed(1)}% penalty`
+    );
+  }
+
+  if (multipleFaceCount > 0) {
+    const penalty = Math.min(15, multipleFaceCount * 3);
+    totalPenalty += penalty;
+    reasons.push(
+      `Multiple faces detected ${multipleFaceCount} time(s) — ${penalty.toFixed(1)}% penalty. Only the candidate should be visible.`
+    );
+  }
+
+  return {
+    adjustedScore: Number(Math.max(0, baseScore - totalPenalty).toFixed(1)),
+    penalty: Number(totalPenalty.toFixed(1)),
+    reasons,
+  };
+}
+
+/**
+ * Compute full scoring breakdown for an interview.
  *
  * @param {Object} params
- * @param {number} params.rating - Overall numeric rating (0–10)
- * @param {Array<Object>} params.transcript - Transcript entries with `analysis`
- * @returns {{
- *   total_score: number,
- *   breakdown: {
- *     content_quality: number,
- *     communication_clarity: number,
- *     behavioral_analysis: number,
- *     confidence_trend: number
- *   }
- * }}
+ * @param {number} params.rating
+ * @param {Array<Object>} params.transcript
+ * @param {Object} [params.faceStats]
+ * @returns {{ total_score: number, breakdown: Object, face_penalty: Object|null }}
  */
-function computeInterviewScore({ rating, transcript }) {
+function computeInterviewScore({ rating, transcript, faceStats = null }) {
   const analyses = extractAnalyses(transcript);
 
   const behavioralScore = computeBehavioralScore(analyses);
@@ -181,7 +189,7 @@ function computeInterviewScore({ rating, transcript }) {
     confidenceTrendScore
   );
 
-  const totalScore =
+  let totalScore =
     contentQualityScore * 0.4 +
     communicationClarityScore * 0.25 +
     behavioralScore * 0.25 +
@@ -194,13 +202,24 @@ function computeInterviewScore({ rating, transcript }) {
     confidence_trend: Number(confidenceTrendScore.toFixed(1)),
   };
 
+  let facePenalty = null;
+  if (faceStats && faceStats.totalChecks > 0) {
+    const penaltyResult = applyFaceDetectionPenalty(totalScore, faceStats);
+    totalScore = penaltyResult.adjustedScore;
+    facePenalty = {
+      penalty: penaltyResult.penalty,
+      reasons: penaltyResult.reasons,
+    };
+  }
+
   return {
     total_score: Number(totalScore.toFixed(1)),
     breakdown,
+    face_penalty: facePenalty,
   };
 }
 
 module.exports = {
   computeInterviewScore,
+  applyFaceDetectionPenalty,
 };
-

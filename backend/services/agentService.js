@@ -51,9 +51,10 @@ class AgentService {
    * @param {Number} [difficultyLevel=2] - Bloom's taxonomy level (1-5)
    * @param {String} [topic=null] - Optional topic focus
    * @param {Number} [count=10] - Number of questions to generate (1-10)
+   * @param {string[]} [previousQuestions=null] - Previously asked questions to avoid repetition
    * @returns {Promise<{questions: string[]}>}
    */
-  async generateQuestions(resumeContext, role, difficultyLevel = 2, topic = null, count = 10) {
+  async generateQuestions(resumeContext, role, difficultyLevel = 2, topic = null, count = 10, previousQuestions = null) {
     try {
       const payload = {
         resume_context: resumeContext,
@@ -62,6 +63,9 @@ class AgentService {
         count: count,
       };
       if (topic) payload.topic = topic;
+      if (previousQuestions && previousQuestions.length > 0) {
+        payload.previous_questions = previousQuestions;
+      }
 
       const response = await this.client.post("/qgen", payload);
 

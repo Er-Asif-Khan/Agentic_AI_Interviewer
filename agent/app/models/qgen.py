@@ -10,3 +10,4 @@ class QGenRequest(BaseModel):
     difficulty_level: int = Field(default=2, ge=1, le=5, description="Bloom's taxonomy difficulty level (1-5)")
     topic: Optional[str] = Field(default=None, description="Specific topic to focus the question on")
     count: int = Field(default=10, ge=1, le=10, description="Number of questions to generate")
+    previous_questions: Optional[List[str]] = Field(default=None, description="Previously asked questions to avoid repetition")
