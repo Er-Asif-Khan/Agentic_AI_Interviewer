@@ -2,12 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import "./InterviewScreen.css";
 import API from "../../config";
-<<<<<<< HEAD
-import { loadFaceDetectionModels, createFaceDetectionLoop } from "../../utils/faceDetection";
-=======
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
->>>>>>> 2ebac79 (Added features)
 
 // ─── Status constants ────────────────────────────────────────────────────────
 const STATUS = {
