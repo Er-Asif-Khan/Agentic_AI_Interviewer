@@ -1,7 +1,7 @@
 import Card from "../Card/Card";
 import "./CardTab.css";
 
-export default function CardTab({ Title, Desc }) {
+export default function CardTab() {
   return (
     <section className="features" id="features">
       <div className="container">

@@ -11,7 +11,12 @@
   },
   "dependencies": {
     "axios": "^1.13.2",
+<<<<<<< HEAD
     "face-api.js": "^0.22.2",
+=======
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
+>>>>>>> 2ebac79 (Added features)
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.6",

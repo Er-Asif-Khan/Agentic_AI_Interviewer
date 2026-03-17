@@ -2,16 +2,191 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import "./InterviewScreen.css";
 import API from "../../config";
+<<<<<<< HEAD
 import { loadFaceDetectionModels, createFaceDetectionLoop } from "../../utils/faceDetection";
+=======
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
+>>>>>>> 2ebac79 (Added features)
 
 // ─── Status constants ────────────────────────────────────────────────────────
 const STATUS = {
   LOADING: "loading",
   COUNTDOWN: "countdown",
   IN_PROGRESS: "in-progress",
+  PAUSED: "paused",
   EVALUATING: "evaluating",
   COMPLETED: "completed",
 };
+
+const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
+
+const countKeywordHits = (text, keywords) => {
+  if (!text) return 0;
+  const t = String(text).toLowerCase();
+  return keywords.reduce((acc, k) => (t.includes(k) ? acc + 1 : acc), 0);
+};
+
+const computeSkillRadar = (pairs) => {
+  // Output values are 0..5 (inclusive) for an easy "5-dot" mental model.
+  // We derive these from per-answer evaluation signals using lightweight heuristics.
+  const axes = [
+    {
+      key: "communication",
+      label: "Communication",
+      pos: ["articulate", "communicat", "concise", "engaging", "well-spoken"],
+      neg: ["rambl", "unclear", "verbose", "poorly", "confus"],
+    },
+    {
+      key: "technical",
+      label: "Technical knowledge",
+      pos: ["accurate", "correct", "technical", "concept", "knowledge", "depth"],
+      neg: ["incorrect", "wrong", "shallow", "misunderstand", "inaccurate"],
+    },
+    {
+      key: "problem_solving",
+      label: "Problem solving",
+      pos: ["approach", "steps", "trade-off", "reason", "analysis", "logic"],
+      neg: ["guess", "hand-wav", "no approach", "uncertain", "stuck"],
+    },
+    {
+      key: "structure",
+      label: "Clarity & structure",
+      pos: ["clear", "structured", "organized", "well-structured", "coherent"],
+      neg: ["disorganized", "unclear", "hard to follow", "scattered"],
+    },
+    {
+      key: "confidence",
+      label: "Confidence",
+      pos: ["confident", "certain"],
+      neg: ["not sure", "unsure", "uncertain", "hesitant"],
+    },
+  ];
+
+  const safePairs = Array.isArray(pairs) ? pairs : [];
+  if (safePairs.length === 0) {
+    return { labels: axes.map(a => a.label), values: axes.map(() => 0) };
+  }
+
+  const totals = Object.fromEntries(axes.map(a => [a.key, 0]));
+
+  for (const p of safePairs) {
+    const evalObj = p?.evaluation || {};
+    const score10 = typeof evalObj.score === "number" ? evalObj.score : 5;
+    const base5 = clamp(score10 / 2, 0, 5);
+
+    const feedbackBlob = [
+      p?.question,
+      p?.answer,
+      evalObj.feedback,
+      ...(evalObj.strengths || []),
+      ...(evalObj.weak_areas || []),
+    ].filter(Boolean).join(" | ");
+
+    for (const axis of axes) {
+      let v = base5;
+      const posHits = countKeywordHits(feedbackBlob, axis.pos);
+      const negHits = countKeywordHits(feedbackBlob, axis.neg);
+
+      // Small nudges so the chart reflects themes without overpowering the base score.
+      v += clamp(posHits - negHits, -2, 2) * 0.25;
+
+      if (axis.key === "confidence") {
+        const conf = typeof evalObj.confidence === "number" ? evalObj.confidence : clamp(score10 / 10, 0, 1);
+        v = (v * 0.5) + (clamp(conf * 5, 0, 5) * 0.5);
+      }
+
+      totals[axis.key] += clamp(v, 0, 5);
+    }
+  }
+
+  const values = axes.map(a => clamp(totals[a.key] / safePairs.length, 0, 5));
+  return { labels: axes.map(a => a.label), values };
+};
+
+function RadarChart({ labels, values, max = 5, size = 260 }) {
+  const n = labels.length;
+  const padding = 34;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = (size / 2) - padding;
+
+  const angleFor = (i) => ((Math.PI * 2) / n) * i - Math.PI / 2;
+  const point = (radius, i) => {
+    const a = angleFor(i);
+    return { x: cx + radius * Math.cos(a), y: cy + radius * Math.sin(a) };
+  };
+
+  const ringLevels = [0.2, 0.4, 0.6, 0.8, 1.0];
+  const toPath = (pts) => pts.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ") + " Z";
+  const valuePoints = values.map((v, i) => point(r * clamp(v / max, 0, 1), i));
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Interview skill radar chart">
+      {/* Rings */}
+      {ringLevels.map((lvl) => {
+        const pts = Array.from({ length: n }, (_, i) => point(r * lvl, i));
+        return (
+          <path
+            key={lvl}
+            d={toPath(pts)}
+            fill="none"
+            stroke="rgba(255,255,255,0.10)"
+            strokeWidth="1"
+          />
+        );
+      })}
+
+      {/* Axes */}
+      {Array.from({ length: n }, (_, i) => {
+        const p = point(r, i);
+        return (
+          <line
+            key={i}
+            x1={cx}
+            y1={cy}
+            x2={p.x}
+            y2={p.y}
+            stroke="rgba(255,255,255,0.14)"
+            strokeWidth="1"
+          />
+        );
+      })}
+
+      {/* Data polygon */}
+      <path
+        d={toPath(valuePoints)}
+        fill="rgba(102,126,234,0.22)"
+        stroke="rgba(102,126,234,0.95)"
+        strokeWidth="2"
+      />
+
+      {/* Data points */}
+      {valuePoints.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r="3.2" fill="#667eea" stroke="rgba(0,0,0,0.35)" />
+      ))}
+
+      {/* Labels */}
+      {labels.map((lab, i) => {
+        const lp = point(r + 18, i);
+        const anchor = lp.x < cx - 6 ? "end" : lp.x > cx + 6 ? "start" : "middle";
+        return (
+          <text
+            key={lab}
+            x={lp.x}
+            y={lp.y}
+            fill="rgba(255,255,255,0.85)"
+            fontSize="11"
+            textAnchor={anchor}
+            dominantBaseline="middle"
+          >
+            {lab}
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
 
 export default function InterviewScreen() {
   const navigate = useNavigate();
@@ -28,6 +203,8 @@ export default function InterviewScreen() {
   const [interviewTime, setInterviewTime] = useState(0);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [pauseMessage, setPauseMessage] = useState("");
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // ── Interview data ──────────────────────────────────────────────────────────
   const [questions, setQuestions] = useState([]);
@@ -60,12 +237,15 @@ export default function InterviewScreen() {
   const candidateVideoRef = useRef(null);
   const streamRef = useRef(null);
   const recognitionRef = useRef(null);
+  const resultsRef = useRef(null);
   // Keep latest mutable values accessible inside callbacks without stale closures
   const qaPairsRef = useRef([]);
   const questionIndexRef = useRef(0);
   const questionsRef = useRef([]);
   const resumeContextRef = useRef("");
   const statusRef = useRef(STATUS.LOADING);
+  const pauseMetaRef = useRef({ wasSpeaking: false, reason: "" });
+  const isAudioOnRef = useRef(true);
 
   // ── Keep refs in sync ───────────────────────────────────────────────────────
   useEffect(() => { qaPairsRef.current = qaPairs; }, [qaPairs]);
@@ -73,8 +253,12 @@ export default function InterviewScreen() {
   useEffect(() => { questionsRef.current = questions; }, [questions]);
   useEffect(() => { resumeContextRef.current = resumeContext; }, [resumeContext]);
   useEffect(() => { statusRef.current = status; }, [status]);
+<<<<<<< HEAD
   useEffect(() => { currentDifficultyRef.current = currentDifficulty; }, [currentDifficulty]);
   useEffect(() => { difficultyProgressionRef.current = difficultyProgression; }, [difficultyProgression]);
+=======
+  useEffect(() => { isAudioOnRef.current = isAudioOn; }, [isAudioOn]);
+>>>>>>> 2ebac79 (Added features)
 
   // ── Bootstrap the interview ─────────────────────────────────────────────────
   useEffect(() => {
@@ -361,6 +545,7 @@ export default function InterviewScreen() {
       streamRef.current = stream;
       if (candidateVideoRef.current) candidateVideoRef.current.srcObject = stream;
 
+<<<<<<< HEAD
       // Start face detection loop after camera is ready
       try {
         await loadFaceDetectionModels();
@@ -385,8 +570,21 @@ export default function InterviewScreen() {
       } catch (faceErr) {
         console.warn("Face detection unavailable:", faceErr.message);
       }
+=======
+      // If the candidate stops the camera (track ends), pause the interview until camera returns.
+      // This can happen via browser UI, device disconnect, permissions revocation, etc.
+      stream.getVideoTracks().forEach((track) => {
+        track.onended = () => {
+          pauseInterview("Camera stopped. Turn the camera back on to continue.");
+        };
+      });
+>>>>>>> 2ebac79 (Added features)
     } catch (err) {
       console.warn("Camera access denied:", err.message);
+      // If camera can't be started while the interview is running, pause it.
+      if (statusRef.current === STATUS.IN_PROGRESS || statusRef.current === STATUS.COUNTDOWN) {
+        pauseInterview("Camera is unavailable. Please allow camera access to continue.");
+      }
     }
   };
 
@@ -400,6 +598,54 @@ export default function InterviewScreen() {
       streamRef.current = null;
     }
     setFaceWarning(null);
+  };
+
+  const pauseInterview = (message) => {
+    // Avoid interrupting the normal end flows if we're already leaving the interview.
+    if (statusRef.current === STATUS.EVALUATING || statusRef.current === STATUS.COMPLETED) return;
+
+    pauseMetaRef.current = { wasSpeaking: isSpeaking, reason: message };
+    setPauseMessage(message);
+    setStatus(STATUS.PAUSED);
+    statusRef.current = STATUS.PAUSED;
+
+    stopListening();
+    window.speechSynthesis?.cancel();
+    setIsRecording(false);
+  };
+
+  const resumeInterview = async () => {
+    if (statusRef.current !== STATUS.PAUSED) return;
+
+    // Ensure we have a usable video track; if not, re-request the camera.
+    const hasLiveVideoTrack =
+      !!streamRef.current &&
+      streamRef.current.getVideoTracks().some((t) => t.readyState === "live");
+
+    if (!hasLiveVideoTrack) {
+      stopCamera();
+      await startCamera();
+    }
+
+    // Re-enable any existing video tracks (if the user had disabled them via UI).
+    streamRef.current?.getVideoTracks().forEach((t) => (t.enabled = true));
+    if (candidateVideoRef.current && streamRef.current) {
+      candidateVideoRef.current.srcObject = streamRef.current;
+    }
+
+    setIsVideoOn(true);
+    setPauseMessage("");
+    setStatus(STATUS.IN_PROGRESS);
+    statusRef.current = STATUS.IN_PROGRESS;
+
+    // If we paused while AI was speaking, replay the question so the candidate doesn't miss it.
+    if (pauseMetaRef.current.wasSpeaking && currentQuestion) {
+      speakText(currentQuestion, () => {
+        if (isAudioOnRef.current) startListening();
+      });
+    } else {
+      if (isAudioOnRef.current) startListening();
+    }
   };
 
   // ── Text-to-Speech ──────────────────────────────────────────────────────────
@@ -442,6 +688,11 @@ export default function InterviewScreen() {
 
   // ── Speech Recognition ──────────────────────────────────────────────────────
   const startListening = () => {
+    if (!isAudioOnRef.current) {
+      setIsRecording(false);
+      return;
+    }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       console.warn("Speech recognition not supported. Please use Google Chrome.");
@@ -451,7 +702,11 @@ export default function InterviewScreen() {
 
     // Stop any existing session before creating a new one
     if (recognitionRef.current) {
+<<<<<<< HEAD
       try { recognitionRef.current.onend = null; recognitionRef.current.stop(); } catch (_) { }
+=======
+      try { recognitionRef.current.onend = null; recognitionRef.current.stop(); } catch { /* ignore */ }
+>>>>>>> 2ebac79 (Added features)
       recognitionRef.current = null;
     }
 
@@ -495,17 +750,22 @@ export default function InterviewScreen() {
         alert("Microphone access was denied. Please click the 🔒 icon in your browser address bar, allow the microphone, and refresh the page.");
       }
       // For network/audio-capture errors, try to restart after a short delay
-      if (e.error === "network" || e.error === "audio-capture") {
+      if ((e.error === "network" || e.error === "audio-capture") && isAudioOnRef.current) {
         setTimeout(() => {
+<<<<<<< HEAD
           if (statusRef.current === STATUS.IN_PROGRESS) {
             try { recognition.start(); } catch (_) { }
+=======
+          if (statusRef.current === STATUS.IN_PROGRESS && isAudioOnRef.current) {
+            try { recognition.start(); } catch { /* ignore */ }
+>>>>>>> 2ebac79 (Added features)
           }
         }, 1000);
       }
     };
 
     recognition.onend = () => {
-      if (statusRef.current !== STATUS.IN_PROGRESS) {
+      if (statusRef.current !== STATUS.IN_PROGRESS || !isAudioOnRef.current) {
         setIsRecording(false);
         return;
       }
@@ -514,7 +774,7 @@ export default function InterviewScreen() {
       // audio pipeline has fully shut down.
       // The confirmedText closure persists across restarts so transcript is never lost.
       setTimeout(() => {
-        if (statusRef.current !== STATUS.IN_PROGRESS) {
+        if (statusRef.current !== STATUS.IN_PROGRESS || !isAudioOnRef.current) {
           setIsRecording(false);
           return;
         }
@@ -525,8 +785,13 @@ export default function InterviewScreen() {
           setIsRecording(false);
           // One more attempt after a longer pause
           setTimeout(() => {
+<<<<<<< HEAD
             if (statusRef.current === STATUS.IN_PROGRESS) {
               try { recognition.start(); } catch (_) { }
+=======
+            if (statusRef.current === STATUS.IN_PROGRESS && isAudioOnRef.current) {
+              try { recognition.start(); } catch { /* ignore */ }
+>>>>>>> 2ebac79 (Added features)
             }
           }, 1000);
         }
@@ -539,7 +804,11 @@ export default function InterviewScreen() {
       console.error("Failed to start speech recognition:", err);
       // Retry once after 500ms in case of a timing conflict
       setTimeout(() => {
+<<<<<<< HEAD
         try { recognition.start(); } catch (_) { }
+=======
+        try { recognition.start(); } catch { /* ignore */ }
+>>>>>>> 2ebac79 (Added features)
       }, 500);
     }
 
@@ -570,14 +839,15 @@ export default function InterviewScreen() {
   const toggleVideo = () => {
     setIsVideoOn((v) => {
       const newState = !v;
-      if (streamRef.current) {
-        // Enable/disable the existing video track
-        streamRef.current.getVideoTracks().forEach((t) => (t.enabled = newState));
-        // Re-assign srcObject in case the video element was remounted
-        if (newState && candidateVideoRef.current) {
-          candidateVideoRef.current.srcObject = streamRef.current;
-        }
+      if (!newState) {
+        // Turning camera off pauses the interview until the user turns it on again.
+        streamRef.current?.getVideoTracks().forEach((t) => (t.enabled = false));
+        pauseInterview("Camera is off. Turn the camera on to continue.");
+        return newState;
       }
+
+      // Turning camera on resumes the interview (and re-acquires camera if needed).
+      void resumeInterview();
       return newState;
     });
   };
@@ -585,12 +855,92 @@ export default function InterviewScreen() {
   const toggleAudio = () => {
     setIsAudioOn((a) => {
       const newState = !a;
-      // Mute/unmute the camera stream's audio track (for the video element)
-      // but do NOT touch the SpeechRecognition — it has its own mic access
-      // and is unaffected by the MediaStream track state.
-      streamRef.current?.getAudioTracks().forEach((t) => (t.enabled = newState));
+      // Keep the ref in sync immediately so startListening() sees the new value
+      isAudioOnRef.current = newState;
+
+      // When UI mic is off, do not capture or display user voice.
+      if (!newState) {
+        stopListening();
+        setCurrentTranscript("");
+      } else if (statusRef.current === STATUS.IN_PROGRESS) {
+        startListening();
+      }
       return newState;
     });
+  };
+
+  const exportResultsToPdf = async () => {
+    if (!resultsRef.current) return;
+    if (isExportingPdf) return;
+
+    setIsExportingPdf(true);
+    try {
+      const source = resultsRef.current;
+      const clone = source.cloneNode(true);
+
+      // Make scroll containers fully visible in the PDF.
+      const relaxScrollStyles = (el) => {
+        if (!(el instanceof HTMLElement)) return;
+        if (el.style) {
+          if (el.style.maxHeight) el.style.maxHeight = "none";
+          if (el.style.overflowY) el.style.overflowY = "visible";
+          if (el.style.overflow) el.style.overflow = "visible";
+        }
+        for (const child of Array.from(el.children || [])) relaxScrollStyles(child);
+      };
+      relaxScrollStyles(clone);
+
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "fixed";
+      wrapper.style.left = "-10000px";
+      wrapper.style.top = "0";
+      wrapper.style.width = `${source.getBoundingClientRect().width}px`;
+      wrapper.style.background = "#1e1e2e";
+      wrapper.style.padding = "0";
+      wrapper.style.zIndex = "-1";
+      wrapper.appendChild(clone);
+      document.body.appendChild(wrapper);
+
+      const canvas = await html2canvas(clone, {
+        backgroundColor: "#1e1e2e",
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+
+      document.body.removeChild(wrapper);
+
+      const imgData = canvas.toDataURL("image/png");
+
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 10;
+      const imgWidth = pageWidth - margin * 2;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = margin;
+
+      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight, undefined, "FAST");
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        pdf.addPage();
+        position = heightLeft - imgHeight + margin;
+        pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight, undefined, "FAST");
+        heightLeft -= pageHeight;
+      }
+
+      const safeRole = String(jobRole || "Interview").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_");
+      const dateStr = new Date().toISOString().slice(0, 10);
+      pdf.save(`${safeRole}_Report_${dateStr}.pdf`);
+    } catch (err) {
+      console.error("PDF export failed:", err);
+      alert("Failed to export PDF. Please try again.");
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   const confirmEndInterview = () => {
@@ -626,6 +976,7 @@ export default function InterviewScreen() {
     const score = finalVerdict?.interview_readiness_score ?? "—";
     const signal = finalVerdict?.hire_signal ?? "Pending";
     const signalColor = signal === "Hire" ? "#10b981" : signal === "Borderline" ? "#f59e0b" : "#ef4444";
+    const radar = computeSkillRadar(qaPairs);
 
     // Score breakdown from backend scoring engine (behavioral_ai/scoring.js)
     const scoreBreakdown = savedEvaluation?.score_breakdown || null;
@@ -654,7 +1005,7 @@ export default function InterviewScreen() {
 
     return (
       <div className="interview-screen" style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", flexDirection: "column", gap: "1.5rem", padding: "2rem", paddingTop: "3rem", overflowY: "auto" }}>
-        <div style={{ background: "#1e1e2e", borderRadius: 16, padding: "2.5rem", maxWidth: 600, width: "100%", textAlign: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}>
+        <div ref={resultsRef} style={{ background: "#1e1e2e", borderRadius: 16, padding: "2.5rem", maxWidth: 600, width: "100%", textAlign: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}>
           <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🎉</div>
           <h2 style={{ color: "#fff", marginBottom: "0.5rem" }}>Interview Complete!</h2>
           <p style={{ color: "#a0a0b0", marginBottom: "1.5rem" }}>Your responses have been evaluated by our AI interviewer.</p>
@@ -667,6 +1018,25 @@ export default function InterviewScreen() {
             <div style={{ background: "#2a2a3e", borderRadius: 12, padding: "1.2rem 2rem" }}>
               <div style={{ color: "#a0a0b0", fontSize: "0.85rem" }}>Verdict</div>
               <div style={{ color: signalColor, fontSize: "1.5rem", fontWeight: 700 }}>{signal}</div>
+            </div>
+          </div>
+
+          {/* Skill radar chart */}
+          <div style={{ background: "#2a2a3e", borderRadius: 12, padding: "1.2rem 1.2rem", marginBottom: "1.5rem", textAlign: "left" }}>
+            <div style={{ color: "#a0a0b0", fontSize: "0.85rem", marginBottom: "0.6rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <i className="fas fa-bullseye" style={{ color: "#667eea" }}></i>
+              Skill breakdown (0–5)
+            </div>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <RadarChart labels={radar.labels} values={radar.values} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem 1rem", marginTop: "0.75rem" }}>
+              {radar.labels.map((lab, i) => (
+                <div key={lab} style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", color: "#e0e0f0", fontSize: "0.9rem" }}>
+                  <span style={{ color: "#c0c0d0" }}>{lab}</span>
+                  <span style={{ color: "#667eea", fontWeight: 700 }}>{radar.values[i].toFixed(1)}/5</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -844,6 +1214,7 @@ export default function InterviewScreen() {
           )}
           {/* ── END FIX ── */}
 
+<<<<<<< HEAD
           {/* Score breakdown visualization from backend scoring engine */}
           {scoreBreakdown && (
             <div
@@ -974,6 +1345,22 @@ export default function InterviewScreen() {
               Back to Mock Interview
             </button>
           </div>
+=======
+          <button
+            onClick={exportResultsToPdf}
+            disabled={isExportingPdf}
+            style={{ background: "linear-gradient(135deg,#111827,#334155)", color: "#fff", border: "none", borderRadius: 10, padding: "0.9rem 2.5rem", fontSize: "1rem", fontWeight: 600, cursor: isExportingPdf ? "not-allowed" : "pointer", width: "100%", marginBottom: "0.75rem", opacity: isExportingPdf ? 0.75 : 1 }}
+          >
+            <i className="fas fa-file-pdf"></i> {isExportingPdf ? "Exporting..." : "Export PDF"}
+          </button>
+
+          <button
+            onClick={() => navigate("/mock-interview")}
+            style={{ background: "linear-gradient(135deg,#667eea,#764ba2)", color: "#fff", border: "none", borderRadius: 10, padding: "0.9rem 2.5rem", fontSize: "1rem", fontWeight: 600, cursor: "pointer", width: "100%" }}
+          >
+            Back to Mock Interview
+          </button>
+>>>>>>> 2ebac79 (Added features)
         </div>
       </div>
     );
@@ -1026,6 +1413,24 @@ export default function InterviewScreen() {
               <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: "#667eea", animation: `bounce 1s infinite ${i * 0.2}s` }} />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Paused overlay (camera off) */}
+      {status === STATUS.PAUSED && (
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 110, gap: "1rem", padding: "1.5rem" }}>
+          <div style={{ fontSize: "2.2rem" }}><i className="fas fa-video-slash" style={{ color: "#f59e0b" }}></i></div>
+          <p style={{ color: "#fff", fontSize: "1.1rem", fontWeight: 700, textAlign: "center", maxWidth: 520 }}>
+            {pauseMessage || "Interview paused. Turn the camera on to continue."}
+          </p>
+          <button
+            className="end-interview-btn"
+            style={{ background: "linear-gradient(135deg,#667eea,#764ba2)", fontSize: "0.95rem" }}
+            onClick={() => toggleVideo()}
+            title="Turn on camera to resume"
+          >
+            <i className="fas fa-video"></i> Turn camera on
+          </button>
         </div>
       )}
 
@@ -1149,7 +1554,7 @@ export default function InterviewScreen() {
               className="end-interview-btn"
               style={{ background: "linear-gradient(135deg,#10b981,#059669)", fontSize: "0.95rem" }}
               onClick={handleSubmitAnswer}
-              disabled={isSpeaking}
+              disabled={isSpeaking || status === STATUS.PAUSED}
             >
               <i className="fas fa-check"></i> Submit Answer
             </button>
