@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 class EvaluationResult(BaseModel):
     score: float
@@ -7,6 +7,9 @@ class EvaluationResult(BaseModel):
     weak_areas: List[str]
     feedback: str
     confidence: float
+    # Optional per-answer behavioral communication analysis, populated from
+    # backend.behavioral_ai.analyzer.analyze_transcript
+    analysis: Optional[dict] = None
 
 class EvaluationRequest(BaseModel):
     question: str

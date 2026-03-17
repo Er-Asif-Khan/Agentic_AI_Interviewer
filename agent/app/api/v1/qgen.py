@@ -18,6 +18,8 @@ async def qgen(payload: QGenRequest):
             payload.role,
             payload.difficulty_level,
             payload.topic,
+            payload.count,
+            payload.previous_questions,
         )
         return {"questions": questions}
     except LLMError:

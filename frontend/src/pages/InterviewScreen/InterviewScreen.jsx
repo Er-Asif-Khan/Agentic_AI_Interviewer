@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import "./InterviewScreen.css";
 import API from "../../config";
+import { loadFaceDetectionModels, createFaceDetectionLoop } from "../../utils/faceDetection";
 
 // ─── Status constants ────────────────────────────────────────────────────────
 const STATUS = {
@@ -35,6 +36,20 @@ export default function InterviewScreen() {
   const [currentTranscript, setCurrentTranscript] = useState("");
   const [qaPairs, setQaPairs] = useState([]);          // [{question, answer, evaluation}]
   const [finalVerdict, setFinalVerdict] = useState(null);
+  // Persisted evaluation from backend (includes transcript + score_breakdown + behavioral analysis)
+  const [savedEvaluation, setSavedEvaluation] = useState(null);
+
+  // ── Adaptive difficulty state ──────────────────────────────────────────────
+  const MAX_QUESTIONS = 10;
+  const [currentDifficulty, setCurrentDifficulty] = useState(2);
+  const [difficultyProgression, setDifficultyProgression] = useState([]);
+  const currentDifficultyRef = useRef(2);
+  const difficultyProgressionRef = useRef([]);
+
+  // ── Face detection state ───────────────────────────────────────────────────
+  const [faceWarning, setFaceWarning] = useState(null); // null | "no_face" | "multiple_faces"
+  const faceStatsRef = useRef({ totalChecks: 0, noFaceCount: 0, multipleFaceCount: 0 });
+  const faceLoopRef = useRef(null);
 
   // ── Session meta (from Mock Interview setup) ─────────────────────────────────
   const [interviewId, setInterviewId] = useState(initInterviewId || null);
@@ -58,6 +73,8 @@ export default function InterviewScreen() {
   useEffect(() => { questionsRef.current = questions; }, [questions]);
   useEffect(() => { resumeContextRef.current = resumeContext; }, [resumeContext]);
   useEffect(() => { statusRef.current = status; }, [status]);
+  useEffect(() => { currentDifficultyRef.current = currentDifficulty; }, [currentDifficulty]);
+  useEffect(() => { difficultyProgressionRef.current = difficultyProgression; }, [difficultyProgression]);
 
   // ── Bootstrap the interview ─────────────────────────────────────────────────
   useEffect(() => {
@@ -86,11 +103,14 @@ export default function InterviewScreen() {
       setInterviewId(iId);
       resumeContextRef.current = rContext;
 
-      // Generate AI questions
-      setLoadingMessage("AI is generating questions tailored to your resume...");
+      // Generate first question at default difficulty (Level 2)
+      setLoadingMessage("AI is generating your first question...");
       const qRes = await API.post("/interviews/generate-questions", {
         resumeContext: rContext,
         role,
+        difficultyLevel: 2,
+        count: 1,
+        previousQuestions: [],
       });
       const generatedQuestions = qRes.data.data.questions || [];
       if (generatedQuestions.length === 0) throw new Error("No questions generated");
@@ -128,7 +148,7 @@ export default function InterviewScreen() {
 
   // ── Ask a question ──────────────────────────────────────────────────────────
   const beginQuestion = (qs, index, iId, rCtx, role, candidateId, hrId) => {
-    if (index >= qs.length) {
+    if (index >= qs.length || index >= MAX_QUESTIONS) {
       finishInterview(iId, rCtx, role, candidateId, hrId);
       return;
     }
@@ -152,32 +172,96 @@ export default function InterviewScreen() {
     const answer = currentTranscript.trim() || "(no answer provided)";
     const question = questionsRef.current[questionIndexRef.current];
     const rCtx = resumeContextRef.current;
+    const difficulty = currentDifficultyRef.current;
 
     setStatus(STATUS.EVALUATING);
     statusRef.current = STATUS.EVALUATING;
+    setLoadingMessage("AI is evaluating your answer...");
     setCurrentTranscript("");
 
+    // 1. Evaluate the answer (with current difficulty)
     let evaluation = null;
+    let nextDifficulty = difficulty;
     try {
       const evalRes = await API.post("/interviews/evaluate-answer", {
         question,
         answer,
         resumeContext: rCtx,
+        currentDifficulty: difficulty,
       });
       evaluation = evalRes.data.data;
+      nextDifficulty = evaluation.nextDifficulty || difficulty;
     } catch (err) {
       console.warn("Evaluation failed, continuing:", err.message);
-      evaluation = { score: 5, feedback: "Evaluation unavailable", strengths: [], weak_areas: [], confidence: 0.5 };
+      evaluation = {
+        score: 5,
+        feedback: "Evaluation unavailable",
+        strengths: [],
+        weak_areas: [],
+        confidence: 0.5,
+        analysis: {
+          hesitation_rate: 0, filler_word_count: 0, average_sentence_length: 0,
+          confidence_score: 0, interruptions: 0, vocabulary_richness: 0,
+          response_coherence: 0, hedging_count: 0, hedging_ratio: 0,
+          sentence_structure: 0, response_length: 0, word_count: 0,
+          is_substantive: false,
+        },
+      };
     }
 
-    const newPair = { question, answer, evaluation };
+    // 2. Store Q&A pair
+    const newPair = { question, answer, evaluation, difficulty };
     const updated = [...qaPairsRef.current, newPair];
     qaPairsRef.current = updated;
     setQaPairs(updated);
 
-    // Move to next question
+    // 3. Record difficulty progression
     const nextIndex = questionIndexRef.current + 1;
-    beginQuestion(questionsRef.current, nextIndex, interviewId, rCtx, jobRole, null, null);
+    const progressionEntry = {
+      question_number: nextIndex,
+      difficulty_level: difficulty,
+      candidate_score: evaluation.score ?? 5,
+    };
+    const updatedProgression = [...difficultyProgressionRef.current, progressionEntry];
+    difficultyProgressionRef.current = updatedProgression;
+    setDifficultyProgression(updatedProgression);
+
+    // 4. Update difficulty for next question
+    setCurrentDifficulty(nextDifficulty);
+    currentDifficultyRef.current = nextDifficulty;
+
+    // 5. Check if we've reached max questions
+    if (nextIndex >= MAX_QUESTIONS) {
+      finishInterview(interviewId, rCtx, jobRole, null, null);
+      return;
+    }
+
+    // 6. Generate next question at the adjusted difficulty
+    setLoadingMessage(`Generating next question...`);
+    // setLoadingMessage(`Generating next question (Difficulty Level ${nextDifficulty})...`);
+    try {
+      const qRes = await API.post("/interviews/generate-questions", {
+        resumeContext: rCtx,
+        role: jobRole,
+        difficultyLevel: nextDifficulty,
+        count: 1,
+        previousQuestions: questionsRef.current,
+      });
+      const newQuestions = qRes.data.data.questions || [];
+      if (newQuestions.length === 0) throw new Error("No question generated");
+
+      // Append new question to the questions array
+      const allQuestions = [...questionsRef.current, newQuestions[0]];
+      questionsRef.current = allQuestions;
+      setQuestions(allQuestions);
+
+      // Ask the next question
+      beginQuestion(allQuestions, nextIndex, interviewId, rCtx, jobRole, null, null);
+    } catch (err) {
+      console.error("Failed to generate next question:", err.message);
+      // If generation fails, end the interview gracefully
+      finishInterview(interviewId, rCtx, jobRole, null, null);
+    }
   };
 
   // ── Finish interview ────────────────────────────────────────────────────────
@@ -205,16 +289,21 @@ export default function InterviewScreen() {
       const verdictRes = await API.post("/interviews/final-verdict", {
         sessionContext,
         role,
+        difficultyProgression: difficultyProgressionRef.current,
       });
       const verdict = verdictRes.data.data;
       setFinalVerdict(verdict);
 
       // 3. Save evaluation to database
       const rating = Math.round((verdict.interview_readiness_score ?? 50) / 10);
+      // Persist behavioral analysis & per-question scores into transcript entries
+      // so the backend can run scoring and the frontend/report can visualise metrics.
       const transcript = pairs.map((p) => ({
         speaker: "ai",
         text: p.question,
         answer: p.answer,
+        candidate_score: p.evaluation?.score ?? null,
+        analysis: p.evaluation?.analysis ?? null,
       }));
 
       const evalPayload = {
@@ -226,10 +315,20 @@ export default function InterviewScreen() {
         ].join("\n"),
         shouldHire: verdict.hire_signal === "Hire",
         transcript,
+        faceStats: faceStatsRef.current,
       };
       if (candidateId) evalPayload.candidateId = candidateId;
       if (hrId) evalPayload.hrId = hrId;
       await API.post(`/interviews/${iId}/evaluate`, evalPayload);
+
+      // Fetch the saved evaluation so we can render score breakdown
+      // and per-question behavioral metrics on the completed screen.
+      try {
+        const evalRes = await API.get(`/interviews/${iId}`);
+        setSavedEvaluation(evalRes.data?.data || null);
+      } catch (fetchErr) {
+        console.warn("Failed to fetch saved evaluation:", fetchErr.message);
+      }
 
       setStatus(STATUS.COMPLETED);
       statusRef.current = STATUS.COMPLETED;
@@ -258,21 +357,49 @@ export default function InterviewScreen() {
   const startCamera = async () => {
     try {
       // Request video only — audio is handled exclusively by SpeechRecognition.
-      // Capturing audio here via getUserMedia conflicts with webkitSpeechRecognition
-      // on Windows/Chrome, causing the Speech API to silently fail (audio-capture error).
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       streamRef.current = stream;
       if (candidateVideoRef.current) candidateVideoRef.current.srcObject = stream;
+
+      // Start face detection loop after camera is ready
+      try {
+        await loadFaceDetectionModels();
+        const loop = createFaceDetectionLoop(
+          candidateVideoRef,
+          (faceCount) => {
+            faceStatsRef.current.totalChecks += 1;
+            if (faceCount === 0) {
+              faceStatsRef.current.noFaceCount += 1;
+              setFaceWarning("no_face");
+            } else if (faceCount > 1) {
+              faceStatsRef.current.multipleFaceCount += 1;
+              setFaceWarning("multiple_faces");
+            } else {
+              setFaceWarning(null);
+            }
+          },
+          3000
+        );
+        faceLoopRef.current = loop;
+        loop.start();
+      } catch (faceErr) {
+        console.warn("Face detection unavailable:", faceErr.message);
+      }
     } catch (err) {
       console.warn("Camera access denied:", err.message);
     }
   };
 
   const stopCamera = () => {
+    if (faceLoopRef.current) {
+      faceLoopRef.current.stop();
+      faceLoopRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+    setFaceWarning(null);
   };
 
   // ── Text-to-Speech ──────────────────────────────────────────────────────────
@@ -324,7 +451,7 @@ export default function InterviewScreen() {
 
     // Stop any existing session before creating a new one
     if (recognitionRef.current) {
-      try { recognitionRef.current.onend = null; recognitionRef.current.stop(); } catch (_) {}
+      try { recognitionRef.current.onend = null; recognitionRef.current.stop(); } catch (_) { }
       recognitionRef.current = null;
     }
 
@@ -371,7 +498,7 @@ export default function InterviewScreen() {
       if (e.error === "network" || e.error === "audio-capture") {
         setTimeout(() => {
           if (statusRef.current === STATUS.IN_PROGRESS) {
-            try { recognition.start(); } catch (_) {}
+            try { recognition.start(); } catch (_) { }
           }
         }, 1000);
       }
@@ -399,7 +526,7 @@ export default function InterviewScreen() {
           // One more attempt after a longer pause
           setTimeout(() => {
             if (statusRef.current === STATUS.IN_PROGRESS) {
-              try { recognition.start(); } catch (_) {}
+              try { recognition.start(); } catch (_) { }
             }
           }, 1000);
         }
@@ -412,7 +539,7 @@ export default function InterviewScreen() {
       console.error("Failed to start speech recognition:", err);
       // Retry once after 500ms in case of a timing conflict
       setTimeout(() => {
-        try { recognition.start(); } catch (_) {}
+        try { recognition.start(); } catch (_) { }
       }, 500);
     }
 
@@ -500,6 +627,31 @@ export default function InterviewScreen() {
     const signal = finalVerdict?.hire_signal ?? "Pending";
     const signalColor = signal === "Hire" ? "#10b981" : signal === "Borderline" ? "#f59e0b" : "#ef4444";
 
+    // Score breakdown from backend scoring engine (behavioral_ai/scoring.js)
+    const scoreBreakdown = savedEvaluation?.score_breakdown || null;
+    const breakdown = scoreBreakdown?.breakdown || {};
+
+    const handleDownloadReport = async () => {
+      if (!interviewId) return;
+      try {
+        const response = await API.get(`/interviews/${interviewId}/report`, {
+          responseType: "blob",
+        });
+        const blob = new Blob([response.data], { type: "application/pdf" });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `AletheiaX-Interview-Report-${interviewId}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error("Report download failed:", err.message);
+        alert("Failed to download report. The report may not be available yet.");
+      }
+    };
+
     return (
       <div className="interview-screen" style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", flexDirection: "column", gap: "1.5rem", padding: "2rem", paddingTop: "3rem", overflowY: "auto" }}>
         <div style={{ background: "#1e1e2e", borderRadius: 16, padding: "2.5rem", maxWidth: 600, width: "100%", textAlign: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}>
@@ -543,25 +695,46 @@ export default function InterviewScreen() {
             </div>
           )}
 
+          {/* ── FIX: Merged both branches' qaPairs.map() calls into one ── */}
+          {/* Branch "shivam-features" added communication metrics;        */}
+          {/* Branch "Asif_Features" added per-question score badges.      */}
+          {/* Combined: each question row now shows the score badge AND     */}
+          {/* the communication metrics card beneath the answer.           */}
           {qaPairs?.length > 0 && (
             <div style={{ background: "#2a2a3e", borderRadius: 12, padding: "1rem 1.5rem", marginBottom: "1.5rem", textAlign: "left" }}>
               <div style={{ color: "#667eea", fontSize: "0.85rem", marginBottom: "0.8rem", fontWeight: 600 }}>
                 <i className="fas fa-comments" style={{ marginRight: "0.5rem" }}></i>
-                Interview Transcript
+                Interview Transcript & Communication Metrics
               </div>
               <div style={{ maxHeight: 320, overflowY: "auto" }}>
                 {qaPairs.map((pair, i) => {
+                  // Align with saved evaluation transcript entry if present (for analysis data)
+                  const evalEntry = savedEvaluation?.transcript?.[i] || null;
+                  const analysis = evalEntry?.analysis || pair.evaluation?.analysis || null;
+                  const hasAnalysis = !!analysis;
+
+                  // Score badge data
                   const score = pair.evaluation?.score ?? null;
                   const scoreColor =
                     score === null ? "#a0a0b0"
-                    : score >= 7 ? "#10b981"
-                    : score >= 5 ? "#f59e0b"
-                    : "#ef4444";
+                      : score >= 7 ? "#10b981"
+                        : score >= 5 ? "#f59e0b"
+                          : "#ef4444";
+
                   return (
-                    <div key={i} style={{ marginBottom: "1rem", paddingBottom: "1rem", borderBottom: i < qaPairs.length - 1 ? "1px solid #3a3a4e" : "none" }}>
+                    <div
+                      key={i}
+                      style={{
+                        marginBottom: "1rem",
+                        paddingBottom: "1rem",
+                        borderBottom: i < qaPairs.length - 1 ? "1px solid #3a3a4e" : "none",
+                      }}
+                    >
                       {/* Question row with score badge */}
                       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.3rem" }}>
-                        <div style={{ color: "#667eea", fontSize: "0.8rem", flex: 1 }}>Q{i + 1}: {pair.question}</div>
+                        <div style={{ color: "#667eea", fontSize: "0.8rem", flex: 1 }}>
+                          Q{i + 1}: {pair.question}
+                        </div>
                         <div style={{
                           background: scoreColor + "22",
                           color: scoreColor,
@@ -576,20 +749,231 @@ export default function InterviewScreen() {
                           {score !== null ? `${score}/10` : "—/10"}
                         </div>
                       </div>
-                      <div style={{ color: "#c0c0d0", fontSize: "0.9rem", paddingLeft: "1rem" }}>A: {pair.answer}</div>
+
+                      {/* Answer */}
+                      <div style={{ color: "#c0c0d0", fontSize: "0.9rem", paddingLeft: "1rem", marginBottom: "0.5rem" }}>
+                        A: {pair.answer}
+                      </div>
+
+                      {/* Communication metrics card */}
+                      <div
+                        style={{
+                          marginLeft: "1rem",
+                          borderRadius: 10,
+                          background: "#1e1e2e",
+                          padding: "0.6rem 0.8rem",
+                          fontSize: "0.8rem",
+                        }}
+                      >
+                        {hasAnalysis ? (
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                              gap: "0.4rem 0.8rem",
+                            }}
+                          >
+                            {/* Original metrics */}
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Hesitation Rate</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {Number(analysis.hesitation_rate || 0).toFixed(1)}%
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Filler Words</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {analysis.filler_word_count ?? 0}
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Avg. Sentence Length</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {Number(analysis.average_sentence_length || 0).toFixed(1)} words
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Confidence Score</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {analysis.confidence_score ?? 0}/100
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Interruptions</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {analysis.interruptions ?? 0}
+                              </div>
+                            </div>
+                            {/* New additional metrics */}
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Vocabulary Richness</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {((analysis.vocabulary_richness ?? 0) * 100).toFixed(0)}%
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Coherence</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {((analysis.response_coherence ?? 0) * 100).toFixed(0)}%
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Hedging Language</div>
+                              <div style={{ color: analysis.hedging_count > 2 ? "#ff6b6b" : "#e0e0f0", fontWeight: 600 }}>
+                                {analysis.hedging_count ?? 0} phrase{(analysis.hedging_count ?? 0) !== 1 ? "s" : ""}
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Word Count</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {analysis.word_count ?? 0}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ color: "#606080", fontStyle: "italic" }}>
+                            No communication metrics available
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
               </div>
             </div>
           )}
+          {/* ── END FIX ── */}
 
-          <button
-            onClick={() => navigate("/mock-interview")}
-            style={{ background: "linear-gradient(135deg,#667eea,#764ba2)", color: "#fff", border: "none", borderRadius: 10, padding: "0.9rem 2.5rem", fontSize: "1rem", fontWeight: 600, cursor: "pointer", width: "100%" }}
-          >
-            Back to Mock Interview
-          </button>
+          {/* Score breakdown visualization from backend scoring engine */}
+          {scoreBreakdown && (
+            <div
+              style={{
+                background: "#2a2a3e",
+                borderRadius: 12,
+                padding: "1rem 1.5rem",
+                marginBottom: "1.5rem",
+                textAlign: "left",
+              }}
+            >
+              <div
+                style={{
+                  color: "#a0a0b0",
+                  fontSize: "0.85rem",
+                  marginBottom: "0.8rem",
+                  fontWeight: 600,
+                }}
+              >
+                Score Breakdown
+              </div>
+              {[
+                { key: "content_quality", label: "Content Quality" },
+                { key: "communication_clarity", label: "Communication Clarity" },
+                { key: "behavioral_analysis", label: "Behavioral Analysis" },
+                { key: "confidence_trend", label: "Confidence Trend" },
+              ].map(({ key, label }) => {
+                const value = Number(breakdown[key] ?? 0);
+                const width = Math.max(0, Math.min(100, value));
+                return (
+                  <div key={key} style={{ marginBottom: "0.6rem" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: "0.2rem",
+                        fontSize: "0.8rem",
+                        color: "#c0c0d0",
+                      }}
+                    >
+                      <span>{label}</span>
+                      <span>{value.toFixed(1)}%</span>
+                    </div>
+                    <div
+                      style={{
+                        height: 6,
+                        borderRadius: 999,
+                        background: "#1e1e2e",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${width}%`,
+                          height: "100%",
+                          borderRadius: 999,
+                          background:
+                            key === "behavioral_analysis"
+                              ? "linear-gradient(90deg,#22c55e,#16a34a)"
+                              : key === "confidence_trend"
+                                ? "linear-gradient(90deg,#38bdf8,#0284c7)"
+                                : "linear-gradient(90deg,#6366f1,#8b5cf6)",
+                          transition: "width 0.4s ease",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Total score */}
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.6rem", paddingTop: "0.5rem", borderTop: "1px solid #3a3a4e", fontSize: "0.9rem" }}>
+                <span style={{ color: "#e0e0f0", fontWeight: 700 }}>Total Score</span>
+                <span style={{ color: "#667eea", fontWeight: 700 }}>{scoreBreakdown.total_score?.toFixed(1) ?? "—"}</span>
+              </div>
+
+              {/* Face penalty warning */}
+              {scoreBreakdown.face_penalty && scoreBreakdown.face_penalty.penalty > 0 && (
+                <div style={{ marginTop: "0.6rem", background: "rgba(239,68,68,0.1)", borderRadius: 8, padding: "0.6rem 0.8rem", border: "1px solid rgba(239,68,68,0.3)" }}>
+                  <div style={{ color: "#ef4444", fontSize: "0.8rem", fontWeight: 600, marginBottom: "0.3rem" }}>
+                    <i className="fas fa-exclamation-triangle" style={{ marginRight: "0.4rem" }}></i>
+                    Face Detection Penalty: -{scoreBreakdown.face_penalty.penalty.toFixed(1)}%
+                  </div>
+                  {scoreBreakdown.face_penalty.reasons?.map((reason, idx) => (
+                    <div key={idx} style={{ color: "#f0a0a0", fontSize: "0.75rem", marginTop: "0.15rem" }}>
+                      • {reason}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <button
+              onClick={handleDownloadReport}
+              style={{
+                background: "linear-gradient(135deg,#4f46e5,#6366f1)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 10,
+                padding: "0.8rem 2rem",
+                fontSize: "0.95rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                width: "100%",
+              }}
+            >
+              <i className="fas fa-file-download" style={{ marginRight: "0.5rem" }}></i>
+              Download Interview Report
+            </button>
+
+            <button
+              onClick={() => navigate("/mock-interview")}
+              style={{
+                background: "linear-gradient(135deg,#667eea,#764ba2)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 10,
+                padding: "0.9rem 2.5rem",
+                fontSize: "1rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                width: "100%",
+              }}
+            >
+              Back to Mock Interview
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -626,7 +1010,7 @@ export default function InterviewScreen() {
           )}
           {currentQuestion && (
             <span className="question-indicator">
-              Question {questionIndex + 1} of {questions.length}
+              Question {questionIndex + 1} of {MAX_QUESTIONS}
             </span>
           )}
         </div>
@@ -676,11 +1060,8 @@ export default function InterviewScreen() {
           </div>
 
           {/* Candidate panel */}
-          <div className="video-panel candidate-video-panel">
+          <div className="video-panel candidate-video-panel" style={{ position: "relative" }}>
             <div className="video-wrapper">
-              {/* Always keep <video> in DOM so the ref is never lost.
-                  Hide it with CSS when camera is off so re-enabling
-                  works without needing to re-assign srcObject. */}
               <video
                 ref={candidateVideoRef}
                 className="video-element"
@@ -695,8 +1076,42 @@ export default function InterviewScreen() {
                   <p>Camera Off</p>
                 </div>
               )}
+              {/* Face detection warning overlay */}
+              {faceWarning && isVideoOn && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: 40,
+                    left: 8,
+                    right: 8,
+                    background: faceWarning === "multiple_faces" ? "rgba(255, 60, 60, 0.9)" : "rgba(255, 165, 0, 0.9)",
+                    color: "#fff",
+                    padding: "0.5rem 0.7rem",
+                    borderRadius: 8,
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.4rem",
+                    zIndex: 10,
+                    animation: "fadeIn 0.3s ease",
+                  }}
+                >
+                  <i className={`fas ${faceWarning === "multiple_faces" ? "fa-users" : "fa-user-slash"}`}></i>
+                  {faceWarning === "multiple_faces"
+                    ? "⚠ Multiple faces detected — only the candidate should be visible. This may reduce your score."
+                    : "⚠ Face not detected — please ensure your face is visible to the camera."}
+                </div>
+              )}
             </div>
-            <div className="video-label"><i className="fas fa-user"></i> You</div>
+            <div className="video-label">
+              <i className="fas fa-user"></i> You
+              {faceWarning === null && isVideoOn && faceStatsRef.current.totalChecks > 0 && (
+                <span style={{ marginLeft: 8, color: "#4ade80", fontSize: "0.75rem" }}>
+                  <i className="fas fa-check-circle"></i> Face OK
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
