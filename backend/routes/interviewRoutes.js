@@ -67,6 +67,11 @@ router.post("/start", protect, interviewController.startInterview);
 // @access  Private
 router.get("/:id", interviewController.getInterview);
 
+// @route   GET /api/interviews/:id/report
+// @desc    Download interview PDF report
+// @access  Private
+router.get("/:id/report", protect, interviewController.getInterviewReport);
+
 // @route   POST /api/interviews/:id/end
 // @desc    End an interview session
 // @access  Private

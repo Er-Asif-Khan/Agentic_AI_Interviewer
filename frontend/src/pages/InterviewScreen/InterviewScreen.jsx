@@ -35,6 +35,8 @@ export default function InterviewScreen() {
   const [currentTranscript, setCurrentTranscript] = useState("");
   const [qaPairs, setQaPairs] = useState([]);          // [{question, answer, evaluation}]
   const [finalVerdict, setFinalVerdict] = useState(null);
+  // Persisted evaluation from backend (includes transcript + score_breakdown + behavioral analysis)
+  const [savedEvaluation, setSavedEvaluation] = useState(null);
 
   // ── Adaptive difficulty state ──────────────────────────────────────────────
   const MAX_QUESTIONS = 10;
@@ -272,10 +274,14 @@ export default function InterviewScreen() {
 
       // 3. Save evaluation to database
       const rating = Math.round((verdict.interview_readiness_score ?? 50) / 10);
+      // Persist behavioral analysis & per-question scores into transcript entries
+      // so the backend can run scoring and the frontend/report can visualise metrics.
       const transcript = pairs.map((p) => ({
         speaker: "ai",
         text: p.question,
         answer: p.answer,
+        candidate_score: p.evaluation?.score ?? null,
+        analysis: p.evaluation?.analysis ?? null,
       }));
 
       const evalPayload = {
@@ -291,6 +297,15 @@ export default function InterviewScreen() {
       if (candidateId) evalPayload.candidateId = candidateId;
       if (hrId) evalPayload.hrId = hrId;
       await API.post(`/interviews/${iId}/evaluate`, evalPayload);
+
+      // Fetch the saved evaluation so we can render score breakdown
+      // and per-question behavioral metrics on the completed screen.
+      try {
+        const evalRes = await API.get(`/interviews/${iId}`);
+        setSavedEvaluation(evalRes.data?.data || null);
+      } catch (fetchErr) {
+        console.warn("Failed to fetch saved evaluation:", fetchErr.message);
+      }
 
       setStatus(STATUS.COMPLETED);
       statusRef.current = STATUS.COMPLETED;
@@ -561,6 +576,17 @@ export default function InterviewScreen() {
     const signal = finalVerdict?.hire_signal ?? "Pending";
     const signalColor = signal === "Hire" ? "#10b981" : signal === "Borderline" ? "#f59e0b" : "#ef4444";
 
+    // Score breakdown from backend scoring engine (behavioral_ai/scoring.js)
+    const scoreBreakdown = savedEvaluation?.score_breakdown || null;
+    const breakdown = scoreBreakdown?.breakdown || {};
+
+    const handleDownloadReport = () => {
+      if (!interviewId) return;
+      // Open report endpoint in new tab to trigger browser download
+      const baseURL = API.defaults.baseURL || "";
+      window.open(`${baseURL}/interviews/${interviewId}/report`, "_blank");
+    };
+
     return (
       <div className="interview-screen" style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", flexDirection: "column", gap: "1.5rem", padding: "2rem", paddingTop: "3rem", overflowY: "auto" }}>
         <div style={{ background: "#1e1e2e", borderRadius: 16, padding: "2.5rem", maxWidth: 600, width: "100%", textAlign: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}>
@@ -604,29 +630,212 @@ export default function InterviewScreen() {
             </div>
           )}
 
+          {/* Answer-level transcript + behavioral metrics */}
           {qaPairs?.length > 0 && (
             <div style={{ background: "#2a2a3e", borderRadius: 12, padding: "1rem 1.5rem", marginBottom: "1.5rem", textAlign: "left" }}>
               <div style={{ color: "#667eea", fontSize: "0.85rem", marginBottom: "0.8rem", fontWeight: 600 }}>
                 <i className="fas fa-comments" style={{ marginRight: "0.5rem" }}></i>
-                Interview Transcript
+                Interview Transcript & Communication Metrics
               </div>
-              <div style={{ maxHeight: 240, overflowY: "auto" }}>
-                {qaPairs.map((pair, i) => (
-                  <div key={i} style={{ marginBottom: "1rem", paddingBottom: "1rem", borderBottom: i < qaPairs.length - 1 ? "1px solid #3a3a4e" : "none" }}>
-                    <div style={{ color: "#667eea", fontSize: "0.8rem", marginBottom: "0.3rem" }}>Q{i + 1}: {pair.question}</div>
-                    <div style={{ color: "#c0c0d0", fontSize: "0.9rem", paddingLeft: "1rem" }}>A: {pair.answer}</div>
-                  </div>
-                ))}
+              <div style={{ maxHeight: 320, overflowY: "auto" }}>
+                {qaPairs.map((pair, i) => {
+                  // Try to align with saved evaluation transcript entry if present
+                  const evalEntry = savedEvaluation?.transcript?.[i] || null;
+                  const analysis = evalEntry?.analysis || pair.evaluation?.analysis || null;
+                  const hasAnalysis = !!analysis;
+
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        marginBottom: "1rem",
+                        paddingBottom: "1rem",
+                        borderBottom: i < qaPairs.length - 1 ? "1px solid #3a3a4e" : "none",
+                      }}
+                    >
+                      <div style={{ color: "#667eea", fontSize: "0.8rem", marginBottom: "0.3rem" }}>
+                        Q{i + 1}: {pair.question}
+                      </div>
+                      <div style={{ color: "#c0c0d0", fontSize: "0.9rem", paddingLeft: "1rem", marginBottom: "0.5rem" }}>
+                        A: {pair.answer}
+                      </div>
+
+                      {/* Communication metrics card */}
+                      <div
+                        style={{
+                          marginLeft: "1rem",
+                          borderRadius: 10,
+                          background: "#1e1e2e",
+                          padding: "0.6rem 0.8rem",
+                          fontSize: "0.8rem",
+                        }}
+                      >
+                        {hasAnalysis ? (
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                              gap: "0.4rem 0.8rem",
+                            }}
+                          >
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Hesitation Rate</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {analysis.hesitation_rate?.toFixed
+                                  ? `${analysis.hesitation_rate.toFixed(1)}%`
+                                  : `${Number(analysis.hesitation_rate || 0).toFixed(1)}%`}
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Filler Words</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {analysis.filler_word_count ?? 0}
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Avg. Sentence Length</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {analysis.average_sentence_length?.toFixed
+                                  ? analysis.average_sentence_length.toFixed(1)
+                                  : Number(analysis.average_sentence_length || 0).toFixed(1)}{" "}
+                                words
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Confidence Score</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {analysis.confidence_score ?? 0}
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#a0a0b0" }}>Interruptions</div>
+                              <div style={{ color: "#e0e0f0", fontWeight: 600 }}>
+                                {analysis.interruptions ?? 0}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ color: "#606080", fontStyle: "italic" }}>
+                            No communication metrics available
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          <button
-            onClick={() => navigate("/mock-interview")}
-            style={{ background: "linear-gradient(135deg,#667eea,#764ba2)", color: "#fff", border: "none", borderRadius: 10, padding: "0.9rem 2.5rem", fontSize: "1rem", fontWeight: 600, cursor: "pointer", width: "100%" }}
-          >
-            Back to Mock Interview
-          </button>
+          {/* Score breakdown visualization from backend scoring engine */}
+          {scoreBreakdown && (
+            <div
+              style={{
+                background: "#2a2a3e",
+                borderRadius: 12,
+                padding: "1rem 1.5rem",
+                marginBottom: "1.5rem",
+                textAlign: "left",
+              }}
+            >
+              <div
+                style={{
+                  color: "#a0a0b0",
+                  fontSize: "0.85rem",
+                  marginBottom: "0.8rem",
+                  fontWeight: 600,
+                }}
+              >
+                Score Breakdown
+              </div>
+              {[
+                { key: "content_quality", label: "Content Quality" },
+                { key: "communication_clarity", label: "Communication Clarity" },
+                { key: "behavioral_analysis", label: "Behavioral Analysis" },
+                { key: "confidence_trend", label: "Confidence Trend" },
+              ].map(({ key, label }) => {
+                const value = Number(breakdown[key] ?? 0);
+                const width = Math.max(0, Math.min(100, value));
+                return (
+                  <div key={key} style={{ marginBottom: "0.6rem" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: "0.2rem",
+                        fontSize: "0.8rem",
+                        color: "#c0c0d0",
+                      }}
+                    >
+                      <span>{label}</span>
+                      <span>{value.toFixed(1)}%</span>
+                    </div>
+                    <div
+                      style={{
+                        height: 6,
+                        borderRadius: 999,
+                        background: "#1e1e2e",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${width}%`,
+                          height: "100%",
+                          borderRadius: 999,
+                          background:
+                            key === "behavioral_analysis"
+                              ? "linear-gradient(90deg,#22c55e,#16a34a)"
+                              : key === "confidence_trend"
+                              ? "linear-gradient(90deg,#38bdf8,#0284c7)"
+                              : "linear-gradient(90deg,#6366f1,#8b5cf6)",
+                          transition: "width 0.4s ease",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <button
+              onClick={handleDownloadReport}
+              style={{
+                background: "linear-gradient(135deg,#4f46e5,#6366f1)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 10,
+                padding: "0.8rem 2rem",
+                fontSize: "0.95rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                width: "100%",
+              }}
+            >
+              <i className="fas fa-file-download" style={{ marginRight: "0.5rem" }}></i>
+              Download Interview Report
+            </button>
+
+            <button
+              onClick={() => navigate("/mock-interview")}
+              style={{
+                background: "linear-gradient(135deg,#667eea,#764ba2)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 10,
+                padding: "0.9rem 2.5rem",
+                fontSize: "1rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                width: "100%",
+              }}
+            >
+              Back to Mock Interview
+            </button>
+          </div>
         </div>
       </div>
     );

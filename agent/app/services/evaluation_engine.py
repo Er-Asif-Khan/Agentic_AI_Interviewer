@@ -1,4 +1,5 @@
 from app.services.llm_client import call_llm
+from backend.behavioral_ai.analyzer import analyze_transcript
 
 EVAL_PROMPT = """
 You are a senior technical interviewer.
@@ -32,10 +33,15 @@ def evaluate_answer(question: str, answer: str, resume_context: str = ""):
 
     response = call_llm(prompt)
 
+    # Behavioral communication analysis on the raw candidate answer
+    # (using rule-based metrics from the behavioral_ai analyzer).
+    analysis = analyze_transcript(answer or "")
+
     return {
         "score": round(response["score"], 1),
         "strengths": response["strengths"],
         "weak_areas": response["weak_areas"],
         "feedback": response["feedback"],
         "confidence": min(1.0, response.get("score", 7) / 10),
+        "analysis": analysis,
     }
