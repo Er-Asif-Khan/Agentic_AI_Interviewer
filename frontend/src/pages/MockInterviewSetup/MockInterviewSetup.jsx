@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../../config";
 import "./MockInterviewSetup.css";
@@ -19,20 +19,77 @@ const ROLES = [
 
 export default function MockInterviewSetup() {
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
+
   const [resumeFile, setResumeFile] = useState(null);
   const [selectedRole, setSelectedRole] = useState("Software Engineer");
   const [customRole, setCustomRole] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const effectiveRole = selectedRole === "Other" ? customRole.trim() : selectedRole;
+
+  const validateFile = (file) => {
+    const validTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    if (!validTypes.includes(file.type) && !file.name.match(/\.(pdf|docx?)$/i)) {
+      setError("Only PDF or DOCX files are accepted.");
+      return false;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("File size must be under 5 MB.");
+      return false;
+    }
+    return true;
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file && validateFile(file)) {
+      setResumeFile(file);
+      setError(null);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && validateFile(file)) {
+      setResumeFile(file);
+      setError(null);
+    }
+  };
+
+  const handleDragOver = (e) => { e.preventDefault(); setIsDragOver(true); };
+  const handleDragLeave = () => setIsDragOver(false);
+
+  const removeFile = () => {
+    setResumeFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const getFileIcon = (file) => {
+    if (!file) return "fa-file";
+    if (file.name.endsWith(".pdf")) return "fa-file-pdf";
+    return "fa-file-word";
+  };
 
   const handleStartInterview = async () => {
     if (!effectiveRole) {
       setError("Please select or enter a role.");
       return;
     }
-
     setError(null);
     setLoading(true);
 
@@ -72,87 +129,154 @@ export default function MockInterviewSetup() {
   };
 
   return (
-    <div className="mock-interview-setup">
-      <header className="setup-header">
-        <h1><i className="fas fa-microphone-alt"></i> Mock Interview</h1>
-        <button className="logout-btn" onClick={handleLogout}>
-          <i className="fas fa-sign-out-alt"></i> Logout
+    <div className="mock-setup-page">
+      {/* Header */}
+      <header className="mock-setup-header">
+        <div className="mock-setup-brand">
+          <i className="fas fa-robot"></i>
+          <span>AI Interviewer</span>
+        </div>
+        <button className="mock-logout-btn" onClick={handleLogout}>
+          <i className="fas fa-sign-out-alt"></i>
+          Logout
         </button>
       </header>
 
-      <main className="setup-content">
-        <div className="setup-card">
-          <h2>Prepare Your Mock Interview</h2>
-          <p className="setup-subtitle">
-            Upload your resume and choose the role you want to practice for. Our AI will generate tailored questions.
-          </p>
-
-          <div className="form-group">
-            <label htmlFor="resume">
-              <i className="fas fa-file-pdf"></i> Resume (PDF or DOCX)
-            </label>
-            <input
-              id="resume"
-              type="file"
-              accept=".pdf,.docx"
-              onChange={(e) => setResumeFile(e.target.files?.[0] || null)}
-            />
-            {resumeFile && (
-              <span className="file-name">{resumeFile.name}</span>
-            )}
+      {/* Main content */}
+      <main className="mock-setup-main">
+        {/* Left — info panel */}
+        <div className="mock-setup-info">
+          <div className="info-badge">
+            <i className="fas fa-sparkles"></i> AI-Powered
           </div>
+          <h1>Mock Interview</h1>
+          <p className="info-desc">
+            Get tailored interview questions generated from your resume and role. Practice with a real-time AI interviewer and receive instant feedback.
+          </p>
+          <ul className="info-features">
+            <li><i className="fas fa-check-circle"></i> Resume-aware questions</li>
+            <li><i className="fas fa-check-circle"></i> Real-time speech recognition</li>
+            <li><i className="fas fa-check-circle"></i> Per-answer scoring</li>
+            <li><i className="fas fa-check-circle"></i> Hire / No-hire verdict</li>
+          </ul>
+        </div>
 
-          <div className="form-group">
+        {/* Right — form card */}
+        <div className="mock-setup-card">
+          <h2>Set Up Your Session</h2>
+
+          {/* Role selection */}
+          <div className="mock-field">
             <label htmlFor="role">
-              <i className="fas fa-briefcase"></i> Role
+              <i className="fas fa-briefcase"></i> Target Role
             </label>
-            <select
-              id="role"
-              value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value)}
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
+            <div className="mock-select-wrapper">
+              <select
+                id="role"
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
+              >
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+              <i className="fas fa-chevron-down select-arrow"></i>
+            </div>
           </div>
 
           {selectedRole === "Other" && (
-            <div className="form-group">
+            <div className="mock-field">
               <label htmlFor="customRole">
-                <i className="fas fa-edit"></i> Enter your role
+                <i className="fas fa-edit"></i> Custom Role
               </label>
-              <textarea
+              <input
                 id="customRole"
+                type="text"
                 placeholder="e.g. Blockchain Developer, Technical Writer..."
                 value={customRole}
                 onChange={(e) => setCustomRole(e.target.value)}
-                rows={2}
+                className="mock-text-input"
               />
             </div>
           )}
 
+          {/* Resume upload */}
+          <div className="mock-field">
+            <label>
+              <i className="fas fa-file-alt"></i> Resume
+              <span className="optional-tag">optional</span>
+            </label>
+
+            {!resumeFile ? (
+              <div
+                className={`mock-drop-zone ${isDragOver ? "drag-over" : ""}`}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  onChange={handleFileChange}
+                  style={{ display: "none" }}
+                />
+                <div className="drop-zone-icon">
+                  <i className={`fas fa-cloud-upload-alt ${isDragOver ? "drop-bounce" : ""}`}></i>
+                </div>
+                <p className="drop-zone-title">
+                  {isDragOver ? "Drop it here!" : "Drag & drop your resume"}
+                </p>
+                <p className="drop-zone-sub">or <span className="drop-browse">browse files</span></p>
+                <p className="drop-zone-hint">PDF or DOCX · Max 5 MB</p>
+              </div>
+            ) : (
+              <div className="mock-file-preview">
+                <div className="file-preview-icon">
+                  <i className={`fas ${getFileIcon(resumeFile)}`}></i>
+                </div>
+                <div className="file-preview-info">
+                  <span className="file-preview-name">{resumeFile.name}</span>
+                  <span className="file-preview-size">{formatFileSize(resumeFile.size)}</span>
+                </div>
+                <button className="file-remove-btn" onClick={removeFile} title="Remove file">
+                  <i className="fas fa-times"></i>
+                </button>
+              </div>
+            )}
+          </div>
+
           {error && (
-            <div className="setup-error">
+            <div className="mock-error">
               <i className="fas fa-exclamation-circle"></i> {error}
             </div>
           )}
 
           <button
-            className="start-btn"
+            className="mock-start-btn"
             onClick={handleStartInterview}
             disabled={loading || (selectedRole === "Other" && !customRole.trim())}
           >
             {loading ? (
               <>
-                <i className="fas fa-spinner fa-spin"></i> Preparing...
+                <i className="fas fa-spinner fa-spin"></i>
+                Preparing Interview...
               </>
             ) : (
               <>
-                <i className="fas fa-play"></i> Start Mock Interview
+                <i className="fas fa-play"></i>
+                Start Mock Interview
               </>
             )}
           </button>
+
+          {!resumeFile && (
+            <p className="mock-skip-note">
+              <i className="fas fa-info-circle"></i>
+              No resume? We'll generate general questions for the selected role.
+            </p>
+          )}
         </div>
       </main>
     </div>

@@ -400,7 +400,7 @@ export default function InterviewScreen() {
 
     // Stop any existing session before creating a new one
     if (recognitionRef.current) {
-      try { recognitionRef.current.onend = null; recognitionRef.current.stop(); } catch (_) {}
+      try { recognitionRef.current.onend = null; recognitionRef.current.stop(); } catch (_) { }
       recognitionRef.current = null;
     }
 
@@ -447,7 +447,7 @@ export default function InterviewScreen() {
       if (e.error === "network" || e.error === "audio-capture") {
         setTimeout(() => {
           if (statusRef.current === STATUS.IN_PROGRESS) {
-            try { recognition.start(); } catch (_) {}
+            try { recognition.start(); } catch (_) { }
           }
         }, 1000);
       }
@@ -475,7 +475,7 @@ export default function InterviewScreen() {
           // One more attempt after a longer pause
           setTimeout(() => {
             if (statusRef.current === STATUS.IN_PROGRESS) {
-              try { recognition.start(); } catch (_) {}
+              try { recognition.start(); } catch (_) { }
             }
           }, 1000);
         }
@@ -488,7 +488,7 @@ export default function InterviewScreen() {
       console.error("Failed to start speech recognition:", err);
       // Retry once after 500ms in case of a timing conflict
       setTimeout(() => {
-        try { recognition.start(); } catch (_) {}
+        try { recognition.start(); } catch (_) { }
       }, 500);
     }
 
@@ -723,288 +723,319 @@ export default function InterviewScreen() {
                     </div>
                   );
                 })}
+                <div style={{ maxHeight: 320, overflowY: "auto" }}>
+                  {qaPairs.map((pair, i) => {
+                    const score = pair.evaluation?.score ?? null;
+                    const scoreColor =
+                      score === null ? "#a0a0b0"
+                        : score >= 7 ? "#10b981"
+                          : score >= 5 ? "#f59e0b"
+                            : "#ef4444";
+                    return (
+                      <div key={i} style={{ marginBottom: "1rem", paddingBottom: "1rem", borderBottom: i < qaPairs.length - 1 ? "1px solid #3a3a4e" : "none" }}>
+                        {/* Question row with score badge */}
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.3rem" }}>
+                          <div style={{ color: "#667eea", fontSize: "0.8rem", flex: 1 }}>Q{i + 1}: {pair.question}</div>
+                          <div style={{
+                            background: scoreColor + "22",
+                            color: scoreColor,
+                            border: `1px solid ${scoreColor}55`,
+                            borderRadius: 6,
+                            padding: "0.15rem 0.55rem",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            whiteSpace: "nowrap",
+                            flexShrink: 0,
+                          }}>
+                            {score !== null ? `${score}/10` : "—/10"}
+                          </div>
+                        </div>
+                        <div style={{ color: "#c0c0d0", fontSize: "0.9rem", paddingLeft: "1rem" }}>A: {pair.answer}</div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
           )}
 
-          {/* Score breakdown visualization from backend scoring engine */}
-          {scoreBreakdown && (
-            <div
-              style={{
-                background: "#2a2a3e",
-                borderRadius: 12,
-                padding: "1rem 1.5rem",
-                marginBottom: "1.5rem",
-                textAlign: "left",
-              }}
-            >
-              <div
-                style={{
-                  color: "#a0a0b0",
-                  fontSize: "0.85rem",
-                  marginBottom: "0.8rem",
-                  fontWeight: 600,
-                }}
-              >
-                Score Breakdown
-              </div>
-              {[
-                { key: "content_quality", label: "Content Quality" },
-                { key: "communication_clarity", label: "Communication Clarity" },
-                { key: "behavioral_analysis", label: "Behavioral Analysis" },
-                { key: "confidence_trend", label: "Confidence Trend" },
-              ].map(({ key, label }) => {
-                const value = Number(breakdown[key] ?? 0);
-                const width = Math.max(0, Math.min(100, value));
-                return (
-                  <div key={key} style={{ marginBottom: "0.6rem" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: "0.2rem",
-                        fontSize: "0.8rem",
-                        color: "#c0c0d0",
-                      }}
-                    >
-                      <span>{label}</span>
-                      <span>{value.toFixed(1)}%</span>
-                    </div>
-                    <div
-                      style={{
-                        height: 6,
-                        borderRadius: 999,
-                        background: "#1e1e2e",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${width}%`,
-                          height: "100%",
-                          borderRadius: 999,
-                          background:
-                            key === "behavioral_analysis"
-                              ? "linear-gradient(90deg,#22c55e,#16a34a)"
-                              : key === "confidence_trend"
-                              ? "linear-gradient(90deg,#38bdf8,#0284c7)"
-                              : "linear-gradient(90deg,#6366f1,#8b5cf6)",
-                          transition: "width 0.4s ease",
-                        }}
-                      />
-                    </div>
+              {/* Score breakdown visualization from backend scoring engine */}
+              {scoreBreakdown && (
+                <div
+                  style={{
+                    background: "#2a2a3e",
+                    borderRadius: 12,
+                    padding: "1rem 1.5rem",
+                    marginBottom: "1.5rem",
+                    textAlign: "left",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#a0a0b0",
+                      fontSize: "0.85rem",
+                      marginBottom: "0.8rem",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Score Breakdown
                   </div>
-                );
-              })}
+                  {[
+                    { key: "content_quality", label: "Content Quality" },
+                    { key: "communication_clarity", label: "Communication Clarity" },
+                    { key: "behavioral_analysis", label: "Behavioral Analysis" },
+                    { key: "confidence_trend", label: "Confidence Trend" },
+                  ].map(({ key, label }) => {
+                    const value = Number(breakdown[key] ?? 0);
+                    const width = Math.max(0, Math.min(100, value));
+                    return (
+                      <div key={key} style={{ marginBottom: "0.6rem" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginBottom: "0.2rem",
+                            fontSize: "0.8rem",
+                            color: "#c0c0d0",
+                          }}
+                        >
+                          <span>{label}</span>
+                          <span>{value.toFixed(1)}%</span>
+                        </div>
+                        <div
+                          style={{
+                            height: 6,
+                            borderRadius: 999,
+                            background: "#1e1e2e",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${width}%`,
+                              height: "100%",
+                              borderRadius: 999,
+                              background:
+                                key === "behavioral_analysis"
+                                  ? "linear-gradient(90deg,#22c55e,#16a34a)"
+                                  : key === "confidence_trend"
+                                    ? "linear-gradient(90deg,#38bdf8,#0284c7)"
+                                    : "linear-gradient(90deg,#6366f1,#8b5cf6)",
+                              transition: "width 0.4s ease",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <button
+                  onClick={handleDownloadReport}
+                  style={{
+                    background: "linear-gradient(135deg,#4f46e5,#6366f1)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 10,
+                    padding: "0.8rem 2rem",
+                    fontSize: "0.95rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    width: "100%",
+                  }}
+                >
+                  <i className="fas fa-file-download" style={{ marginRight: "0.5rem" }}></i>
+                  Download Interview Report
+                </button>
+
+                <button
+                  onClick={() => navigate("/mock-interview")}
+                  style={{
+                    background: "linear-gradient(135deg,#667eea,#764ba2)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 10,
+                    padding: "0.9rem 2.5rem",
+                    fontSize: "1rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    width: "100%",
+                  }}
+                >
+                  Back to Mock Interview
+                </button>
+              </div>
             </div>
-          )}
-
-          {/* Actions */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <button
-              onClick={handleDownloadReport}
-              style={{
-                background: "linear-gradient(135deg,#4f46e5,#6366f1)",
-                color: "#fff",
-                border: "none",
-                borderRadius: 10,
-                padding: "0.8rem 2rem",
-                fontSize: "0.95rem",
-                fontWeight: 600,
-                cursor: "pointer",
-                width: "100%",
-              }}
-            >
-              <i className="fas fa-file-download" style={{ marginRight: "0.5rem" }}></i>
-              Download Interview Report
-            </button>
-
-            <button
-              onClick={() => navigate("/mock-interview")}
-              style={{
-                background: "linear-gradient(135deg,#667eea,#764ba2)",
-                color: "#fff",
-                border: "none",
-                borderRadius: 10,
-                padding: "0.9rem 2.5rem",
-                fontSize: "1rem",
-                fontWeight: 600,
-                cursor: "pointer",
-                width: "100%",
-              }}
-            >
-              Back to Mock Interview
-            </button>
-          </div>
-        </div>
       </div>
-    );
+        );
   }
 
-  // Main interview screen
-  return (
-    <div className="interview-screen">
-      {/* Header */}
-      <div className="interview-header">
-        <div className="interview-info">
-          <h2><i className="fas fa-video"></i> AI Interview — {jobRole}</h2>
-          {status === STATUS.IN_PROGRESS && (
-            <div className="interview-timer">
-              <i className="fas fa-clock"></i> {formatTime(interviewTime)}
-            </div>
-          )}
-          {countdown !== null && (
-            <div className="countdown-display">
-              <span className="countdown-number">{countdown}</span>
-            </div>
-          )}
-        </div>
-        <div className="interview-status">
-          {isRecording && (
-            <span className="recording-indicator">
-              <i className="fas fa-circle"></i> Recording
-            </span>
-          )}
-          {isSpeaking && (
-            <span className="recording-indicator" style={{ background: "rgba(102,126,234,0.2)", color: "#667eea" }}>
-              <i className="fas fa-volume-up"></i> AI Speaking
-            </span>
-          )}
-          {currentQuestion && (
-            <span className="question-indicator">
-              Question {questionIndex + 1} of {MAX_QUESTIONS}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Evaluating overlay */}
-      {status === STATUS.EVALUATING && (
-        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 100, gap: "1rem" }}>
-          <div style={{ fontSize: "2rem" }}><i className="fas fa-robot" style={{ color: "#667eea" }}></i></div>
-          <p style={{ color: "#fff", fontSize: "1.1rem", fontWeight: 600 }}>{loadingMessage || "AI is evaluating your answer..."}</p>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            {[0, 1, 2].map((i) => (
-              <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: "#667eea", animation: `bounce 1s infinite ${i * 0.2}s` }} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Countdown overlay */}
-      {status === STATUS.COUNTDOWN && countdown !== null && (
-        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
-          <p style={{ color: "#a0a0b0", marginBottom: "1rem", fontSize: "1.1rem" }}>Interview starting in</p>
-          <div style={{ color: "#667eea", fontSize: "8rem", fontWeight: 700, lineHeight: 1 }}>{countdown}</div>
-          <p style={{ color: "#a0a0b0", marginTop: "1rem" }}>Get ready...</p>
-        </div>
-      )}
-
-      {/* Video grid */}
-      <div className="video-container">
-        <div className="video-grid">
-          {/* AI panel */}
-          <div className="video-panel ai-video-panel">
-            <div className="video-wrapper">
-              <div className="video-placeholder">
-                <div className="ai-avatar">
-                  <i className={`fas ${isSpeaking ? "fa-comment-dots" : "fa-robot"}`}></i>
+        // Main interview screen
+        return (
+        <div className="interview-screen">
+          {/* Header */}
+          <div className="interview-header">
+            <div className="interview-info">
+              <h2><i className="fas fa-video"></i> AI Interview — {jobRole}</h2>
+              {status === STATUS.IN_PROGRESS && (
+                <div className="interview-timer">
+                  <i className="fas fa-clock"></i> {formatTime(interviewTime)}
                 </div>
-                <p>AI Interviewer</p>
-                {currentQuestion && status === STATUS.IN_PROGRESS && (
-                  <div className="current-question">
-                    <p className="question-text">{currentQuestion}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="video-label"><i className="fas fa-robot"></i> AI Interviewer</div>
-          </div>
-
-          {/* Candidate panel */}
-          <div className="video-panel candidate-video-panel">
-            <div className="video-wrapper">
-              {/* Always keep <video> in DOM so the ref is never lost.
-                  Hide it with CSS when camera is off so re-enabling
-                  works without needing to re-assign srcObject. */}
-              <video
-                ref={candidateVideoRef}
-                className="video-element"
-                autoPlay
-                playsInline
-                muted
-                style={{ display: isVideoOn ? "block" : "none" }}
-              />
-              {!isVideoOn && (
-                <div className="video-off-overlay">
-                  <i className="fas fa-video-slash"></i>
-                  <p>Camera Off</p>
+              )}
+              {countdown !== null && (
+                <div className="countdown-display">
+                  <span className="countdown-number">{countdown}</span>
                 </div>
               )}
             </div>
-            <div className="video-label"><i className="fas fa-user"></i> You</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Live transcript */}
-      {status === STATUS.IN_PROGRESS && (
-        <div style={{ background: "#1e1e2e", borderTop: "1px solid #2a2a4e", padding: "0.8rem 1.5rem", minHeight: 64, display: "flex", alignItems: "center", gap: "1rem" }}>
-          <i className="fas fa-microphone" style={{ color: isRecording ? "#ef4444" : "#a0a0b0" }}></i>
-          <p style={{ margin: 0, color: currentTranscript ? "#e0e0f0" : "#606080", fontStyle: currentTranscript ? "normal" : "italic", flex: 1, fontSize: "0.95rem" }}>
-            {currentTranscript || "Start speaking your answer..."}
-          </p>
-        </div>
-      )}
-
-      {/* Controls */}
-      <div className="interview-controls">
-        <div className="control-buttons">
-          <button className={`control-btn ${isAudioOn ? "active" : "muted"}`} onClick={toggleAudio} title={isAudioOn ? "Mute" : "Unmute"}>
-            <i className={`fas fa-microphone${isAudioOn ? "" : "-slash"}`}></i>
-          </button>
-          <button className={`control-btn ${isVideoOn ? "active" : "muted"}`} onClick={toggleVideo} title={isVideoOn ? "Turn off camera" : "Turn on camera"}>
-            <i className={`fas fa-video${isVideoOn ? "" : "-slash"}`}></i>
-          </button>
-          {isRecording && (
-            <span className="recording-indicator" style={{ alignSelf: "center" }}>
-              <i className="fas fa-circle"></i> Listening
-            </span>
-          )}
-        </div>
-
-        <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-          {/* Submit Answer button — only shown while in-progress */}
-          {status === STATUS.IN_PROGRESS && (
-            <button
-              className="end-interview-btn"
-              style={{ background: "linear-gradient(135deg,#10b981,#059669)", fontSize: "0.95rem" }}
-              onClick={handleSubmitAnswer}
-              disabled={isSpeaking}
-            >
-              <i className="fas fa-check"></i> Submit Answer
-            </button>
-          )}
-          <button className="end-interview-btn" onClick={() => setShowEndConfirm(true)}>
-            <i className="fas fa-phone-slash"></i> End Interview
-          </button>
-        </div>
-      </div>
-
-      {/* End confirm modal */}
-      {showEndConfirm && (
-        <div className="end-interview-modal">
-          <div className="modal-content">
-            <div className="modal-icon"><i className="fas fa-exclamation-triangle"></i></div>
-            <h3>End Interview?</h3>
-            <p>Are you sure you want to end this interview? Your progress will be lost.</p>
-            <div className="modal-actions">
-              <button className="cancel-btn" onClick={() => setShowEndConfirm(false)}>Cancel</button>
-              <button className="confirm-btn" onClick={confirmEndInterview}>End Interview</button>
+            <div className="interview-status">
+              {isRecording && (
+                <span className="recording-indicator">
+                  <i className="fas fa-circle"></i> Recording
+                </span>
+              )}
+              {isSpeaking && (
+                <span className="recording-indicator" style={{ background: "rgba(102,126,234,0.2)", color: "#667eea" }}>
+                  <i className="fas fa-volume-up"></i> AI Speaking
+                </span>
+              )}
+              {currentQuestion && (
+                <span className="question-indicator">
+                  Question {questionIndex + 1} of {MAX_QUESTIONS}
+                </span>
+              )}
             </div>
           </div>
+
+          {/* Evaluating overlay */}
+          {status === STATUS.EVALUATING && (
+            <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 100, gap: "1rem" }}>
+              <div style={{ fontSize: "2rem" }}><i className="fas fa-robot" style={{ color: "#667eea" }}></i></div>
+              <p style={{ color: "#fff", fontSize: "1.1rem", fontWeight: 600 }}>{loadingMessage || "AI is evaluating your answer..."}</p>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                {[0, 1, 2].map((i) => (
+                  <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: "#667eea", animation: `bounce 1s infinite ${i * 0.2}s` }} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Countdown overlay */}
+          {status === STATUS.COUNTDOWN && countdown !== null && (
+            <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+              <p style={{ color: "#a0a0b0", marginBottom: "1rem", fontSize: "1.1rem" }}>Interview starting in</p>
+              <div style={{ color: "#667eea", fontSize: "8rem", fontWeight: 700, lineHeight: 1 }}>{countdown}</div>
+              <p style={{ color: "#a0a0b0", marginTop: "1rem" }}>Get ready...</p>
+            </div>
+          )}
+
+          {/* Video grid */}
+          <div className="video-container">
+            <div className="video-grid">
+              {/* AI panel */}
+              <div className="video-panel ai-video-panel">
+                <div className="video-wrapper">
+                  <div className="video-placeholder">
+                    <div className="ai-avatar">
+                      <i className={`fas ${isSpeaking ? "fa-comment-dots" : "fa-robot"}`}></i>
+                    </div>
+                    <p>AI Interviewer</p>
+                    {currentQuestion && status === STATUS.IN_PROGRESS && (
+                      <div className="current-question">
+                        <p className="question-text">{currentQuestion}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="video-label"><i className="fas fa-robot"></i> AI Interviewer</div>
+              </div>
+
+              {/* Candidate panel */}
+              <div className="video-panel candidate-video-panel">
+                <div className="video-wrapper">
+                  {/* Always keep <video> in DOM so the ref is never lost.
+                  Hide it with CSS when camera is off so re-enabling
+                  works without needing to re-assign srcObject. */}
+                  <video
+                    ref={candidateVideoRef}
+                    className="video-element"
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{ display: isVideoOn ? "block" : "none" }}
+                  />
+                  {!isVideoOn && (
+                    <div className="video-off-overlay">
+                      <i className="fas fa-video-slash"></i>
+                      <p>Camera Off</p>
+                    </div>
+                  )}
+                </div>
+                <div className="video-label"><i className="fas fa-user"></i> You</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Live transcript */}
+          {status === STATUS.IN_PROGRESS && (
+            <div style={{ background: "#1e1e2e", borderTop: "1px solid #2a2a4e", padding: "0.8rem 1.5rem", minHeight: 64, display: "flex", alignItems: "center", gap: "1rem" }}>
+              <i className="fas fa-microphone" style={{ color: isRecording ? "#ef4444" : "#a0a0b0" }}></i>
+              <p style={{ margin: 0, color: currentTranscript ? "#e0e0f0" : "#606080", fontStyle: currentTranscript ? "normal" : "italic", flex: 1, fontSize: "0.95rem" }}>
+                {currentTranscript || "Start speaking your answer..."}
+              </p>
+            </div>
+          )}
+
+          {/* Controls */}
+          <div className="interview-controls">
+            <div className="control-buttons">
+              <button className={`control-btn ${isAudioOn ? "active" : "muted"}`} onClick={toggleAudio} title={isAudioOn ? "Mute" : "Unmute"}>
+                <i className={`fas fa-microphone${isAudioOn ? "" : "-slash"}`}></i>
+              </button>
+              <button className={`control-btn ${isVideoOn ? "active" : "muted"}`} onClick={toggleVideo} title={isVideoOn ? "Turn off camera" : "Turn on camera"}>
+                <i className={`fas fa-video${isVideoOn ? "" : "-slash"}`}></i>
+              </button>
+              {isRecording && (
+                <span className="recording-indicator" style={{ alignSelf: "center" }}>
+                  <i className="fas fa-circle"></i> Listening
+                </span>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+              {/* Submit Answer button — only shown while in-progress */}
+              {status === STATUS.IN_PROGRESS && (
+                <button
+                  className="end-interview-btn"
+                  style={{ background: "linear-gradient(135deg,#10b981,#059669)", fontSize: "0.95rem" }}
+                  onClick={handleSubmitAnswer}
+                  disabled={isSpeaking}
+                >
+                  <i className="fas fa-check"></i> Submit Answer
+                </button>
+              )}
+              <button className="end-interview-btn" onClick={() => setShowEndConfirm(true)}>
+                <i className="fas fa-phone-slash"></i> End Interview
+              </button>
+            </div>
+          </div>
+
+          {/* End confirm modal */}
+          {showEndConfirm && (
+            <div className="end-interview-modal">
+              <div className="modal-content">
+                <div className="modal-icon"><i className="fas fa-exclamation-triangle"></i></div>
+                <h3>End Interview?</h3>
+                <p>Are you sure you want to end this interview? Your progress will be lost.</p>
+                <div className="modal-actions">
+                  <button className="cancel-btn" onClick={() => setShowEndConfirm(false)}>Cancel</button>
+                  <button className="confirm-btn" onClick={confirmEndInterview}>End Interview</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
-    </div>
-  );
+        );
 }
