@@ -5,7 +5,7 @@ export default function Navbar() {
   return (
     <nav>
       <Link to="/" className="logo">
-        <i className="fas fa-robot"></i> Interview-X
+        <i className="fas fa-robot"></i> AletheiaX
       </Link>
       <div className="nav-links">
         <a href="#features" className="nav-link">Features</a>

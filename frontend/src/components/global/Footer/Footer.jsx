@@ -15,7 +15,7 @@ export default function Footer() {
             textDecoration: "none",
           }}
         >
-          <i className="fas fa-robot"></i> Interview-X
+          <i className="fas fa-robot"></i> AletheiaX
         </Link>
         <div className="footer-links">
           <a href="#features" className="footer-link">
@@ -32,7 +32,7 @@ export default function Footer() {
           </Link>
         </div>
         <div className="footer-bottom">
-          <p>Interview-X © 2025 | Practice Smarter, Interview Better 🤖</p>
+          <p>AletheiaX © 2025 | Practice Smarter, Interview Better 🤖</p>
           <p style={{ marginTop: "10px", fontSize: "0.9rem" }}>
             Helping job seekers ace interviews with AI-powered mock practice
           </p>

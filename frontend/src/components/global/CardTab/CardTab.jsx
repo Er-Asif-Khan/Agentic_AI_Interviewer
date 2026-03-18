@@ -5,7 +5,7 @@ export default function CardTab() {
   return (
     <section className="features" id="features">
       <div className="container">
-        <h2 className="section-title">Why Choose Interview-X?</h2>
+        <h2 className="section-title">Why Choose AletheiaX?</h2>
         <p className="section-subtitle">
           Everything you need to practice and improve your interview skills
         </p>

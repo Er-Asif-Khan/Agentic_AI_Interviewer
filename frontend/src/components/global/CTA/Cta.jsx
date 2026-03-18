@@ -7,7 +7,7 @@ export default function Cta() {
       <div className="cta-content">
         <h2>Ready to Nail Your Next Interview?</h2>
         <p>
-          Join thousands of job seekers using Interview-X to practice, get
+          Join thousands of job seekers using AletheiaX to practice, get
           instant feedback, and walk into real interviews with confidence.
         </p>
         <div className="cta-buttons">

@@ -2,8 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import "./InterviewScreen.css";
 import API from "../../config";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
 import { loadFaceDetectionModels, createFaceDetectionLoop } from "../../utils/faceDetection";
 
 // ─── Status constants ────────────────────────────────────────────────────────
@@ -201,7 +199,6 @@ export default function InterviewScreen() {
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [pauseMessage, setPauseMessage] = useState("");
-  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // ── Interview data ──────────────────────────────────────────────────────────
   const [questions, setQuestions] = useState([]);
@@ -843,80 +840,6 @@ export default function InterviewScreen() {
     });
   };
 
-  const exportResultsToPdf = async () => {
-    if (!resultsRef.current) return;
-    if (isExportingPdf) return;
-
-    setIsExportingPdf(true);
-    try {
-      const source = resultsRef.current;
-      const clone = source.cloneNode(true);
-
-      // Make scroll containers fully visible in the PDF.
-      const relaxScrollStyles = (el) => {
-        if (!(el instanceof HTMLElement)) return;
-        if (el.style) {
-          if (el.style.maxHeight) el.style.maxHeight = "none";
-          if (el.style.overflowY) el.style.overflowY = "visible";
-          if (el.style.overflow) el.style.overflow = "visible";
-        }
-        for (const child of Array.from(el.children || [])) relaxScrollStyles(child);
-      };
-      relaxScrollStyles(clone);
-
-      const wrapper = document.createElement("div");
-      wrapper.style.position = "fixed";
-      wrapper.style.left = "-10000px";
-      wrapper.style.top = "0";
-      wrapper.style.width = `${source.getBoundingClientRect().width}px`;
-      wrapper.style.background = "#1e1e2e";
-      wrapper.style.padding = "0";
-      wrapper.style.zIndex = "-1";
-      wrapper.appendChild(clone);
-      document.body.appendChild(wrapper);
-
-      const canvas = await html2canvas(clone, {
-        backgroundColor: "#1e1e2e",
-        scale: 2,
-        useCORS: true,
-        logging: false,
-      });
-
-      document.body.removeChild(wrapper);
-
-      const imgData = canvas.toDataURL("image/png");
-
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 10;
-      const imgWidth = pageWidth - margin * 2;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      let heightLeft = imgHeight;
-      let position = margin;
-
-      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight, undefined, "FAST");
-      heightLeft -= pageHeight;
-
-      while (heightLeft > 0) {
-        pdf.addPage();
-        position = heightLeft - imgHeight + margin;
-        pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight, undefined, "FAST");
-        heightLeft -= pageHeight;
-      }
-
-      const safeRole = String(jobRole || "Interview").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_");
-      const dateStr = new Date().toISOString().slice(0, 10);
-      pdf.save(`${safeRole}_Report_${dateStr}.pdf`);
-    } catch (err) {
-      console.error("PDF export failed:", err);
-      alert("Failed to export PDF. Please try again.");
-    } finally {
-      setIsExportingPdf(false);
-    }
-  };
-
   const confirmEndInterview = () => {
     stopListening();
     stopCamera();
@@ -1251,14 +1174,6 @@ export default function InterviewScreen() {
 
           {/* Actions */}
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <button
-              onClick={exportResultsToPdf}
-              disabled={isExportingPdf}
-              style={{ background: "linear-gradient(135deg,#111827,#334155)", color: "#fff", border: "none", borderRadius: 10, padding: "0.9rem 2.5rem", fontSize: "1rem", fontWeight: 600, cursor: isExportingPdf ? "not-allowed" : "pointer", width: "100%", opacity: isExportingPdf ? 0.75 : 1 }}
-            >
-              <i className="fas fa-file-pdf"></i> {isExportingPdf ? "Exporting..." : "Export PDF"}
-            </button>
-
             <button
               onClick={handleDownloadReport}
               style={{ background: "linear-gradient(135deg,#4f46e5,#6366f1)", color: "#fff", border: "none", borderRadius: 10, padding: "0.8rem 2rem", fontSize: "0.95rem", fontWeight: 600, cursor: "pointer", width: "100%" }}
