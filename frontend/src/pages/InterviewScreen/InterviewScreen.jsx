@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import "./InterviewScreen.css";
 import API from "../../config";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { loadFaceDetectionModels, createFaceDetectionLoop } from "../../utils/faceDetection";
 
 // ─── Status constants ────────────────────────────────────────────────────────
 const STATUS = {
@@ -249,12 +250,9 @@ export default function InterviewScreen() {
   useEffect(() => { questionsRef.current = questions; }, [questions]);
   useEffect(() => { resumeContextRef.current = resumeContext; }, [resumeContext]);
   useEffect(() => { statusRef.current = status; }, [status]);
-<<<<<<< HEAD
   useEffect(() => { currentDifficultyRef.current = currentDifficulty; }, [currentDifficulty]);
   useEffect(() => { difficultyProgressionRef.current = difficultyProgression; }, [difficultyProgression]);
-=======
   useEffect(() => { isAudioOnRef.current = isAudioOn; }, [isAudioOn]);
->>>>>>> 2ebac79 (Added features)
 
   // ── Bootstrap the interview ─────────────────────────────────────────────────
   useEffect(() => {
@@ -541,7 +539,6 @@ export default function InterviewScreen() {
       streamRef.current = stream;
       if (candidateVideoRef.current) candidateVideoRef.current.srcObject = stream;
 
-<<<<<<< HEAD
       // Start face detection loop after camera is ready
       try {
         await loadFaceDetectionModels();
@@ -566,7 +563,7 @@ export default function InterviewScreen() {
       } catch (faceErr) {
         console.warn("Face detection unavailable:", faceErr.message);
       }
-=======
+
       // If the candidate stops the camera (track ends), pause the interview until camera returns.
       // This can happen via browser UI, device disconnect, permissions revocation, etc.
       stream.getVideoTracks().forEach((track) => {
@@ -574,7 +571,6 @@ export default function InterviewScreen() {
           pauseInterview("Camera stopped. Turn the camera back on to continue.");
         };
       });
->>>>>>> 2ebac79 (Added features)
     } catch (err) {
       console.warn("Camera access denied:", err.message);
       // If camera can't be started while the interview is running, pause it.
@@ -698,11 +694,7 @@ export default function InterviewScreen() {
 
     // Stop any existing session before creating a new one
     if (recognitionRef.current) {
-<<<<<<< HEAD
-      try { recognitionRef.current.onend = null; recognitionRef.current.stop(); } catch (_) { }
-=======
       try { recognitionRef.current.onend = null; recognitionRef.current.stop(); } catch { /* ignore */ }
->>>>>>> 2ebac79 (Added features)
       recognitionRef.current = null;
     }
 
@@ -748,13 +740,8 @@ export default function InterviewScreen() {
       // For network/audio-capture errors, try to restart after a short delay
       if ((e.error === "network" || e.error === "audio-capture") && isAudioOnRef.current) {
         setTimeout(() => {
-<<<<<<< HEAD
-          if (statusRef.current === STATUS.IN_PROGRESS) {
-            try { recognition.start(); } catch (_) { }
-=======
           if (statusRef.current === STATUS.IN_PROGRESS && isAudioOnRef.current) {
             try { recognition.start(); } catch { /* ignore */ }
->>>>>>> 2ebac79 (Added features)
           }
         }, 1000);
       }
@@ -781,13 +768,8 @@ export default function InterviewScreen() {
           setIsRecording(false);
           // One more attempt after a longer pause
           setTimeout(() => {
-<<<<<<< HEAD
-            if (statusRef.current === STATUS.IN_PROGRESS) {
-              try { recognition.start(); } catch (_) { }
-=======
             if (statusRef.current === STATUS.IN_PROGRESS && isAudioOnRef.current) {
               try { recognition.start(); } catch { /* ignore */ }
->>>>>>> 2ebac79 (Added features)
             }
           }, 1000);
         }
@@ -800,11 +782,7 @@ export default function InterviewScreen() {
       console.error("Failed to start speech recognition:", err);
       // Retry once after 500ms in case of a timing conflict
       setTimeout(() => {
-<<<<<<< HEAD
-        try { recognition.start(); } catch (_) { }
-=======
         try { recognition.start(); } catch { /* ignore */ }
->>>>>>> 2ebac79 (Added features)
       }, 500);
     }
 
@@ -1210,26 +1188,10 @@ export default function InterviewScreen() {
           )}
           {/* ── END FIX ── */}
 
-<<<<<<< HEAD
           {/* Score breakdown visualization from backend scoring engine */}
           {scoreBreakdown && (
-            <div
-              style={{
-                background: "#2a2a3e",
-                borderRadius: 12,
-                padding: "1rem 1.5rem",
-                marginBottom: "1.5rem",
-                textAlign: "left",
-              }}
-            >
-              <div
-                style={{
-                  color: "#a0a0b0",
-                  fontSize: "0.85rem",
-                  marginBottom: "0.8rem",
-                  fontWeight: 600,
-                }}
-              >
+            <div style={{ background: "#2a2a3e", borderRadius: 12, padding: "1rem 1.5rem", marginBottom: "1.5rem", textAlign: "left" }}>
+              <div style={{ color: "#a0a0b0", fontSize: "0.85rem", marginBottom: "0.8rem", fontWeight: 600 }}>
                 Score Breakdown
               </div>
               {[
@@ -1242,26 +1204,11 @@ export default function InterviewScreen() {
                 const width = Math.max(0, Math.min(100, value));
                 return (
                   <div key={key} style={{ marginBottom: "0.6rem" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: "0.2rem",
-                        fontSize: "0.8rem",
-                        color: "#c0c0d0",
-                      }}
-                    >
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem", fontSize: "0.8rem", color: "#c0c0d0" }}>
                       <span>{label}</span>
                       <span>{value.toFixed(1)}%</span>
                     </div>
-                    <div
-                      style={{
-                        height: 6,
-                        borderRadius: 999,
-                        background: "#1e1e2e",
-                        overflow: "hidden",
-                      }}
-                    >
+                    <div style={{ height: 6, borderRadius: 999, background: "#1e1e2e", overflow: "hidden" }}>
                       <div
                         style={{
                           width: `${width}%`,
@@ -1281,13 +1228,11 @@ export default function InterviewScreen() {
                 );
               })}
 
-              {/* Total score */}
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.6rem", paddingTop: "0.5rem", borderTop: "1px solid #3a3a4e", fontSize: "0.9rem" }}>
                 <span style={{ color: "#e0e0f0", fontWeight: 700 }}>Total Score</span>
                 <span style={{ color: "#667eea", fontWeight: 700 }}>{scoreBreakdown.total_score?.toFixed(1) ?? "—"}</span>
               </div>
 
-              {/* Face penalty warning */}
               {scoreBreakdown.face_penalty && scoreBreakdown.face_penalty.penalty > 0 && (
                 <div style={{ marginTop: "0.6rem", background: "rgba(239,68,68,0.1)", borderRadius: 8, padding: "0.6rem 0.8rem", border: "1px solid rgba(239,68,68,0.3)" }}>
                   <div style={{ color: "#ef4444", fontSize: "0.8rem", fontWeight: 600, marginBottom: "0.3rem" }}>
@@ -1307,18 +1252,16 @@ export default function InterviewScreen() {
           {/* Actions */}
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <button
+              onClick={exportResultsToPdf}
+              disabled={isExportingPdf}
+              style={{ background: "linear-gradient(135deg,#111827,#334155)", color: "#fff", border: "none", borderRadius: 10, padding: "0.9rem 2.5rem", fontSize: "1rem", fontWeight: 600, cursor: isExportingPdf ? "not-allowed" : "pointer", width: "100%", opacity: isExportingPdf ? 0.75 : 1 }}
+            >
+              <i className="fas fa-file-pdf"></i> {isExportingPdf ? "Exporting..." : "Export PDF"}
+            </button>
+
+            <button
               onClick={handleDownloadReport}
-              style={{
-                background: "linear-gradient(135deg,#4f46e5,#6366f1)",
-                color: "#fff",
-                border: "none",
-                borderRadius: 10,
-                padding: "0.8rem 2rem",
-                fontSize: "0.95rem",
-                fontWeight: 600,
-                cursor: "pointer",
-                width: "100%",
-              }}
+              style={{ background: "linear-gradient(135deg,#4f46e5,#6366f1)", color: "#fff", border: "none", borderRadius: 10, padding: "0.8rem 2rem", fontSize: "0.95rem", fontWeight: 600, cursor: "pointer", width: "100%" }}
             >
               <i className="fas fa-file-download" style={{ marginRight: "0.5rem" }}></i>
               Download Interview Report
@@ -1326,37 +1269,11 @@ export default function InterviewScreen() {
 
             <button
               onClick={() => navigate("/mock-interview")}
-              style={{
-                background: "linear-gradient(135deg,#667eea,#764ba2)",
-                color: "#fff",
-                border: "none",
-                borderRadius: 10,
-                padding: "0.9rem 2.5rem",
-                fontSize: "1rem",
-                fontWeight: 600,
-                cursor: "pointer",
-                width: "100%",
-              }}
+              style={{ background: "linear-gradient(135deg,#667eea,#764ba2)", color: "#fff", border: "none", borderRadius: 10, padding: "0.9rem 2.5rem", fontSize: "1rem", fontWeight: 600, cursor: "pointer", width: "100%" }}
             >
               Back to Mock Interview
             </button>
           </div>
-=======
-          <button
-            onClick={exportResultsToPdf}
-            disabled={isExportingPdf}
-            style={{ background: "linear-gradient(135deg,#111827,#334155)", color: "#fff", border: "none", borderRadius: 10, padding: "0.9rem 2.5rem", fontSize: "1rem", fontWeight: 600, cursor: isExportingPdf ? "not-allowed" : "pointer", width: "100%", marginBottom: "0.75rem", opacity: isExportingPdf ? 0.75 : 1 }}
-          >
-            <i className="fas fa-file-pdf"></i> {isExportingPdf ? "Exporting..." : "Export PDF"}
-          </button>
-
-          <button
-            onClick={() => navigate("/mock-interview")}
-            style={{ background: "linear-gradient(135deg,#667eea,#764ba2)", color: "#fff", border: "none", borderRadius: 10, padding: "0.9rem 2.5rem", fontSize: "1rem", fontWeight: 600, cursor: "pointer", width: "100%" }}
-          >
-            Back to Mock Interview
-          </button>
->>>>>>> 2ebac79 (Added features)
         </div>
       </div>
     );
